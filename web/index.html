@@ -1,0 +1,1660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>RIST Manager</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .tab-active {
+            border-bottom: 2px solid #4f46e5;
+            color: #4f46e5;
+        }
+        .backup-indicator {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 8px;
+        }
+        .backup-heart {
+            width: 20px;
+            height: 20px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            margin-right: 4px;
+        }
+        .backup-heart.healthy {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2328a745'%3E%3Cpath d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'/%3E%3C/svg%3E");
+        }
+        .backup-heart.unhealthy {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23868e96'%3E%3Cpath d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'/%3E%3C/svg%3E");
+        }
+        .backup-status {
+            font-size: 0.7em;
+            font-weight: bold;
+            color: #666;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 2px 4px;
+        }
+    </style>
+<script src="transcoder_client.js"></script>
+
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <header class="px-6 py-4 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-gray-800">RIST Channel Manager</h1>
+                    <div class="flex space-x-3">
+                        <a href="dash.html" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+                            Server Stats
+                        </a>
+                        <button id="addChannelBtn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">
+                            Add Channel
+                        </button>
+<button id="addTranscoderBtn" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
+        Add Transcoder
+    </button>
+                    </div>
+                </div>
+                
+                <!-- Tabs -->
+                <div class="flex mt-6 border-b border-gray-200">
+                    <button id="allTab" class="tab-active px-4 py-2 font-medium text-sm focus:outline-none">
+                        All Channels
+                    </button>
+                    <button id="receiveTab" class="px-4 py-2 font-medium text-sm focus:outline-none">
+                        Receive Channels
+                    </button>
+                    <button id="sendTab" class="px-4 py-2 font-medium text-sm focus:outline-none">
+                        Send Channels
+                    </button>
+                    <button id="transcoderTab" class="px-4 py-2 font-medium text-sm focus:outline-none">
+    Transcoder Channels
+</button>
+                </div>
+            </header>
+            
+            <!-- Filter and Search -->
+            <div class="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div class="flex flex-wrap items-center">
+                    <div class="w-full md:w-1/3 lg:w-1/4 mb-2 md:mb-0">
+                        <input
+                            type="text"
+                            id="channelSearch"
+                            placeholder="Search channels..."
+                            class="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                    </div>
+                    <div class="w-full md:w-auto flex space-x-2 ml-0 md:ml-4">
+                        <select id="statusFilter" class="px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">All Statuses</option>
+                            <option value="running">Running</option>
+                            <option value="stopped">Stopped</option>
+                            <option value="error">Error</option>
+                        </select>
+                        <select id="typeFilter" class="px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">All Types</option>
+                            <option value="receive">Receive</option>
+                            <option value="send">Send</option>
+                            <option value="transcoder">Transcoder</option>                            
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Channel List -->
+            <div class="overflow-x-auto">
+                <table class="w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Channel Name
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Type
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Input/Output
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Status
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Metrics Port
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Actions
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="channelTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- Channels will be inserted here by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Empty state message -->
+            <div id="emptyState" class="hidden p-8 text-center">
+                <p class="text-gray-500">No channels found with the current filters.</p>
+            </div>
+        </div>
+    </div>
+
+<!-- Add this new modal div at the same level as your existing channelModal -->
+<div id="transcoderModal" class="fixed inset-0 hidden bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-screen overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h2 id="transcoderModalTitle" class="text-xl font-bold text-gray-800">Add New Transcoder</h2>
+                <button id="closeTranscoderModal" class="text-gray-500 hover:text-gray-700">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        
+        <div class="px-6 py-4">
+            <form id="transcoderForm" class="space-y-6">
+                <input type="hidden" id="transcoderId" value="">
+                
+                <!-- Input Section -->
+                <div class="bg-gray-50 p-4 rounded-md">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Input Configuration</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700">Transcoder Name</label>
+                            <input type="text" id="transcoderName" required
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700">Input Address (UDP)</label>
+                            <input type="text" id="inputAddress" required placeholder="udp://127.0.0.1:10000"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Program PID</label>
+                            <input type="number" id="programPid" min="0" max="8191"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Video PID</label>
+                            <input type="number" id="videoPid" min="0" max="8191"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Audio PID</label>
+                            <input type="number" id="audioPid" min="0" max="8191"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Video Section -->
+                <div class="bg-gray-50 p-4 rounded-md">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Video Configuration</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Device</label>
+                            <select id="videoDevice" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="cpu">CPU</option>
+                                <option value="gpu">GPU</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Video Codec</label>
+                            <select id="videoCodec" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="h264">H.264</option>
+                                <option value="h265">H.265</option>
+                                <option value="av1">AV1</option>
+                                <option value="mp2">MPEG-2</option>
+                                <option value="copy">Copy (Passthrough)</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Resolution</label>
+                            <select id="videoResolution" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="same">Same as input</option>
+                                <option value="1080">1080p</option>
+                                <option value="720">720p</option>
+                                <option value="576">576p</option>
+                                <option value="480">480p</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">B-Frames</label>
+                            <select id="bFrames" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="0">0</option>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Profile</label>
+                            <select id="videoProfile" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="high">High</option>
+                                <option value="main">Main</option>
+                                <option value="baseline">Baseline</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Preset</label>
+                            <select id="videoPreset" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="fast">Fast</option>
+                                <option value="ultrafast">Ultra Fast</option>
+                                <option value="veryfast">Very Fast</option>
+                                <option value="medium">Medium</option>
+                                <option value="slow">Slow</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Video Bitrate (kbps)</label>
+                            <input type="number" id="videoBitrate" min="100" value="2000"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div class="flex items-center">
+                            <input type="checkbox" id="deinterlace" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                            <label for="deinterlace" class="ml-2 block text-sm text-gray-700">Deinterlace</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Audio Section -->
+                <div class="bg-gray-50 p-4 rounded-md">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Audio Configuration</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Audio Codec</label>
+                            <select id="audioCodec" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="aac">AAC</option>
+                                <option value="mp2">MP2</option>
+                                <option value="mp3">MP3</option>
+                                <option value="ac3">AC3</option>
+                                <option value="copy">Copy (Passthrough)</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Sample Rate (Hz)</label>
+                            <select id="sampleRate" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="bypass">Bypass</option>
+                                <option value="8000">8000</option>
+                                <option value="16000">16000</option>
+                                <option value="24000">24000</option>
+                                <option value="32000">32000</option>
+                                <option value="44100">44100</option>
+                                <option value="48000">48000</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Audio Channels</label>
+                            <select id="audioChannels" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="bypass">Bypass</option>
+                                <option value="1">1 (Mono)</option>
+                                <option value="2">2 (Stereo)</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6 (5.1)</option>
+                                <option value="7">7</option>
+                                <option value="8">8 (7.1)</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Audio Bitrate (kbps)</label>
+                            <input type="number" id="audioBitrate" min="32" value="128"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Output Section -->
+                <div class="bg-gray-50 p-4 rounded-md">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Output Configuration</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700">Output Address (UDP)</label>
+                            <input type="text" id="outputAddress" required placeholder="udp://127.0.0.1:10001"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Output Program PID</label>
+                            <input type="number" id="outputProgramPid" min="0" max="8191"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Leave blank to bypass</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Output Video PID</label>
+                            <input type="number" id="outputVideoPid" min="0" max="8191"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Leave blank to bypass</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Output Audio PID</label>
+                            <input type="number" id="outputAudioPid" min="0" max="8191"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Leave blank to bypass</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Mux Bitrate (kbps)</label>
+                            <input type="number" id="muxBitrate" min="0"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-4 pt-4">
+                    <button type="button" id="cancelTranscoderButton" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
+                        Save Transcoder
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+    
+    <!-- Add/Edit Channel Modal -->
+    <div id="channelModal" class="fixed inset-0 hidden bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-screen overflow-y-auto">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h2 id="modalTitle" class="text-xl font-bold text-gray-800">Add New Channel</h2>
+                    <button id="closeModal" class="text-gray-500 hover:text-gray-700">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="px-6 py-4">
+                <form id="channelForm" class="space-y-4">
+                    <input type="hidden" id="channelId" value="">
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Channel Name</label>
+                        <input type="text" id="name" required
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Channel Type</label>
+                        <select id="channelType" required 
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="receive">Receive Channel</option>
+                            <option value="send">Send Channel</option>
+                        </select>
+                    </div>
+                    
+                    <!-- IP Address and Port Fields -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">IP Address</label>
+                        <input type="text" id="ipAddress" required pattern="^@?(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Port</label>
+                        <input type="number" id="port" required min="1" max="65535"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    
+                    <!-- For Receive Channels -->
+                    <div id="receiveFields">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Virtual Destination Port</label>
+                            <input type="number" id="virtDstPort" min="1" max="65535" value="4601"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Multicast IP</label>
+                            <input type="text" id="multicastIp" pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" value="224.2.2.2"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Multicast Port</label>
+                            <input type="number" id="multicastPort" min="1" max="65535" value="10000"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                    
+                    <!-- For Send Channels -->
+                    <div id="sendFields" class="hidden">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Virtual Source Port</label>
+                            <input type="number" id="virtSrcPort" min="1" max="65535" value="4602"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Input Source</label>
+                            <input type="text" id="inputSource" value="udp://127.0.0.1:10000"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                    
+                    <!-- Common Fields -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Buffer Size (ms)</label>
+                        <input type="number" id="buffer" required min="0" value="1000"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Encryption Type</label>
+                        <select id="encryptionType"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">None</option>
+                            <option value="128">AES-128</option>
+                            <option value="256">AES-256</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Encryption Secret</label>
+                        <input type="password" id="secret"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Metrics Port</label>
+                        <input type="number" id="metricsPort" readonly disabled
+                            class="mt-1 block w-full rounded-md bg-gray-100 border-gray-300 shadow-sm">
+                        <p class="mt-1 text-xs text-gray-500">Automatically assigned</p>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Backup Sources (one per line, optional)</label>
+                        <textarea id="backupSources" 
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            rows="4" placeholder="Enter backup source URLs, one per line"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">Example: rist://backup1.example.com:1234</p>
+                    </div>
+                    
+                    <div class="flex justify-end space-x-4 pt-4">
+                        <button type="button" id="cancelButton" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+                            Save Channel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
+        
+class ChannelManager {
+
+
+
+
+
+
+
+    constructor() {
+        this.channels = {};
+        this.backupHealth = {};
+        this.pollingInterval = null;
+        this.isPolling = false;
+        this.currentTab = 'all';
+        this.filters = {
+            search: '',
+            status: '',
+            type: ''
+        };
+        
+        // Initialize event listeners
+        this.initEventListeners();
+    }
+    
+    initEventListeners() {
+        // Tab switching
+        document.getElementById('allTab').addEventListener('click', () => this.switchTab('all'));
+        document.getElementById('receiveTab').addEventListener('click', () => this.switchTab('receive'));
+        document.getElementById('sendTab').addEventListener('click', () => this.switchTab('send'));
+        document.getElementById('transcoderTab').addEventListener('click', () => this.switchTab('transcoder'));
+    
+        
+        // Filter inputs
+        document.getElementById('channelSearch').addEventListener('input', (e) => {
+            this.filters.search = e.target.value.toLowerCase();
+            this.applyFilters();
+        });
+        
+        document.getElementById('statusFilter').addEventListener('change', (e) => {
+            this.filters.status = e.target.value;
+            this.applyFilters();
+        });
+        
+        document.getElementById('typeFilter').addEventListener('change', (e) => {
+            this.filters.type = e.target.value;
+            this.applyFilters();
+        });
+        
+        // Modal controls
+        document.getElementById('addChannelBtn').addEventListener('click', () => this.openAddModal());
+        document.getElementById('closeModal').addEventListener('click', () => this.closeModal());
+        document.getElementById('cancelButton').addEventListener('click', () => this.closeModal());
+        
+        // Channel type toggle in form
+        document.getElementById('channelType').addEventListener('change', (e) => {
+            if (e.target.value === 'receive') {
+                document.getElementById('receiveFields').classList.remove('hidden');
+                document.getElementById('sendFields').classList.add('hidden');
+            } else {
+                document.getElementById('receiveFields').classList.add('hidden');
+                document.getElementById('sendFields').classList.remove('hidden');
+            }
+        });
+        
+        // Form submission
+        document.getElementById('channelForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveChannel();
+        });
+    }
+    
+switchTab(tab) {
+    this.currentTab = tab;
+    
+    // Update tab UI
+    document.querySelectorAll('#allTab, #receiveTab, #sendTab, #transcoderTab').forEach(el => {
+        el.classList.remove('tab-active');
+    });
+    document.getElementById(`${tab}Tab`).classList.add('tab-active');
+    
+    // Update type filter based on tab
+    if (tab === 'receive') {
+        document.getElementById('typeFilter').value = 'receive';
+        this.filters.type = 'receive';
+    } else if (tab === 'send') {
+        document.getElementById('typeFilter').value = 'send';
+        this.filters.type = 'send';
+    } else if (tab === 'transcoder') {
+        document.getElementById('typeFilter').value = 'transcoder';
+        this.filters.type = 'transcoder';
+    } else {
+        document.getElementById('typeFilter').value = '';
+        this.filters.type = '';
+    }
+    
+    this.applyFilters();
+}
+    
+applyFilters() {
+    const filteredChannels = Object.entries(this.channels).filter(([channelId, channel]) => {
+        // Check if channel has valid data
+        if (!channel) return false;
+        
+        // Determine channel type
+        let channelType;
+        
+        // Check if it's a transcoder (input is an object with address property)
+        if (channel.input && typeof channel.input === 'object' && channel.input.address) {
+            channelType = 'transcoder';
+        } 
+        // Otherwise it's a RIST channel (receive or send)
+        else {
+            // Make sure input is a string before calling startsWith
+            const inputStr = typeof channel.input === 'string' ? channel.input : '';
+            const isReceiveChannel = inputStr.startsWith('rist://');
+            channelType = isReceiveChannel ? 'receive' : 'send';
+        }
+        
+        // Apply search filter
+        let searchMatch = this.filters.search === '' || 
+            (channel.name && channel.name.toLowerCase().includes(this.filters.search));
+            
+        // Add input/output to search if they exist in appropriate format
+        if (typeof channel.input === 'string') {
+            searchMatch = searchMatch || channel.input.toLowerCase().includes(this.filters.search);
+        } else if (channel.input && channel.input.address) {
+            searchMatch = searchMatch || channel.input.address.toLowerCase().includes(this.filters.search);
+        }
+        
+        if (typeof channel.output === 'string') {
+            searchMatch = searchMatch || channel.output.toLowerCase().includes(this.filters.search);
+        } else if (channel.output && channel.output.address) {
+            searchMatch = searchMatch || channel.output.address.toLowerCase().includes(this.filters.search);
+        }
+        
+        // Apply status filter
+        const statusMatch = this.filters.status === '' || channel.status === this.filters.status;
+        
+        // Apply type filter
+        const typeMatch = this.filters.type === '' || channelType === this.filters.type;
+        
+        return searchMatch && statusMatch && typeMatch;
+    });
+    
+    this.renderChannels(filteredChannels);
+}
+
+    
+renderChannels(filteredChannels) {
+    const tbody = document.getElementById('channelTableBody');
+    const emptyState = document.getElementById('emptyState');
+    
+    if (filteredChannels.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+    }
+    
+    emptyState.classList.add('hidden');
+    tbody.innerHTML = '';
+    
+    filteredChannels.forEach(([channelId, channel]) => {
+        // Determine channel type with proper transcoder detection
+        let channelType;
+        
+        // Check if it's a transcoder (input is an object with address property)
+        if (channel.input && typeof channel.input === 'object') {
+            channelType = 'transcoder';
+        } 
+        // Otherwise check if it's a receive or send RIST channel
+        else {
+            const isReceiveChannel = typeof channel.input === 'string' && channel.input.startsWith('rist://');
+            channelType = isReceiveChannel ? 'receive' : 'send';
+        }
+        
+        const backupInfo = this.backupHealth[channelId];
+        
+        const row = this.createChannelRow(channelId, channel, channelType, backupInfo);
+        tbody.insertAdjacentHTML('beforeend', row);
+    });
+}
+
+    
+createChannelRow(channelId, channel, type, backupHealth) {
+
+
+    // Safety check
+    if (!channel) return '';
+    
+    const statusClass = channel.status === 'running' ? 'bg-green-100 text-green-800' : 
+                      channel.status === 'error' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800';
+    const statusText = channel.status === 'running' ? 'Running' : 
+                     channel.status === 'error' ? 'Error' : 'Stopped';
+    
+    // Determine channel type if not provided
+    if (!type) {
+        if (channel.input && typeof channel.input === 'object' && channel.input.address) {
+            type = 'transcoder';
+        } else {
+            const inputStr = typeof channel.input === 'string' ? channel.input : '';
+            type = inputStr.startsWith('rist://') ? 'receive' : 'send';
+        }
+    }
+
+
+    
+    // Backup health indicator (only for receive channels)
+    const hasBackups = backupHealth && backupHealth.has_backups;
+    const isHealthy = backupHealth && backupHealth.is_healthy;
+    const backupIndicator = type === 'receive' ? 
+        `<div class="backup-indicator">
+            <div class="backup-heart ${isHealthy ? 'healthy' : 'unhealthy'}"></div>
+            <span class="backup-status">${hasBackups ? 'HA' : 'SA'}</span>
+        </div>` : '';
+    
+    // Determine type badge style
+    let typeBadgeClass;
+    if (type === 'receive') {
+        typeBadgeClass = 'bg-blue-100 text-blue-800';
+    } else if (type === 'send') {
+        typeBadgeClass = 'bg-purple-100 text-purple-800';
+    } else if (type === 'transcoder') {
+        typeBadgeClass = 'bg-green-100 text-green-800';
+    } else {
+        typeBadgeClass = 'bg-gray-100 text-gray-800';
+    }
+    
+    // Format I/O information for display
+    let inputDisplay, outputDisplay;
+    
+    if (type === 'transcoder') {
+        // For transcoders, input and output are objects
+        inputDisplay = channel.input && channel.input.address ? channel.input.address : 'N/A';
+        outputDisplay = channel.output && channel.output.address ? channel.output.address : 'N/A';
+    } else {
+        // For RIST channels, input and output are strings
+        inputDisplay = typeof channel.input === 'string' ? channel.input : 'N/A';
+        outputDisplay = typeof channel.output === 'string' ? channel.output : 'N/A';
+    }
+    
+    return `
+        <tr data-channel-id="${channelId}" data-type="${type}">
+            <td class="px-6 py-4 whitespace-nowrap">
+                ${backupIndicator}
+                <a href="${type === 'transcoder' ? 'stats3.html' : (type === 'send' ? 'stats2.html' : 'stats.html')}?channel=${channelId}" class="text-blue-600 hover:text-blue-900 font-medium">
+                    ${channel.name}
+                </a>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <span class="px-2 py-1 text-xs font-medium rounded-full ${typeBadgeClass}">
+                    ${type.charAt(0).toUpperCase() + type.slice(1)}
+                </span>
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-500">
+                <div>In: ${inputDisplay}</div>
+                <div>Out: ${outputDisplay}</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+                <span class="px-2 py-1 text-xs font-medium rounded-full ${statusClass}">
+                    ${statusText}
+                </span>
+                ${channel.last_error ? `<div class="mt-1 text-xs text-red-600">${channel.last_error}</div>` : ''}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                ${channel.metrics_port || 'N/A'}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <div class="flex space-x-2">
+                    <button 
+                        class="px-3 py-1 rounded text-white ${channel.status === 'running' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}" 
+                        onclick="${type === 'transcoder' ? `transcoderClient.handleToggleTranscoder('${channelId}')` : `channelManager.handleToggleChannel('${channelId}')`}"
+                       
+                    >
+                        ${channel.status === 'running' ? 'Stop' : 'Start'}
+                    </button>
+               <button 
+    class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white" 
+    onclick="${type === 'transcoder' ? 'window.openEditTranscoderModal' : 'channelManager.openEditModal'}('${channelId}')"
+>
+    Edit
+</button>                    <button 
+                        class="px-3 py-1 rounded bg-gray-600 hover:bg-gray-700 text-white" 
+                        onclick="${type === 'transcoder' ? 'transcoderClient.handleDeleteTranscoder' : 'channelManager.handleDeleteChannel'}('${channelId}')"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+    
+    async fetchBackupHealth(channelId) {
+        try {
+            const response = await fetch(`${API_BASE}/channels/${channelId}/backup-health`, {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            const data = await response.json();
+            this.backupHealth[channelId] = data;
+            return data;
+        } catch (error) {
+            console.error(`Error fetching backup health for ${channelId}:`, error);
+            this.backupHealth[channelId] = { 
+                channel_id: channelId, 
+                has_backups: false, 
+                is_healthy: false 
+            };
+            return this.backupHealth[channelId];
+        }
+    }
+    
+async loadChannels() {
+    if (this.isPolling) return;
+    
+    try {
+        this.isPolling = true;
+        
+        // Load RIST channels
+        const channelsResponse = await fetch(`${API_BASE}/channels`, {
+            cache: 'no-store',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            }
+        });
+        const channels = await channelsResponse.json();
+        
+        // Load transcoder channels
+        let transcoders = {};
+        try {
+            const transcodersResponse = await fetch(`${API_BASE}/transcoders`, {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            
+            if (transcodersResponse.ok) {
+                transcoders = await transcodersResponse.json();
+            }
+        } catch (error) {
+            console.warn('Transcoders API may not be available:', error);
+        }
+
+
+         // Tag each channel with its type
+Object.keys(channels).forEach(channelId => {
+  const channel = channels[channelId];
+  if (typeof channel.input === 'string' && channel.input.startsWith('rist://')) {
+    channel._channelType = 'receive';
+  } else {
+    channel._channelType = 'send';
+  }
+});
+
+// Tag transcoders
+Object.keys(transcoders).forEach(id => {
+  const transcoder = transcoders[id];
+  transcoder._channelType = 'transcoder';
+});
+
+        
+        // Combine all channels
+        this.channels = {...channels, ...transcoders};
+        
+        // Fetch backup health for RIST channels
+        const healthPromises = Object.keys(channels).map(
+            channelId => this.fetchBackupHealth(channelId)
+        );
+        await Promise.all(healthPromises);
+        
+        // Apply filters
+        this.applyFilters();
+        
+    } catch (error) {
+        console.error('Error loading channels:', error);
+    } finally {
+        this.isPolling = false;
+    }
+}
+    
+async handleToggleChannel(channelId) {
+    const channel = this.channels[channelId];
+    const isStarting = channel.status !== 'running';
+    
+    // Find the row
+    const row = document.querySelector(`tr[data-channel-id="${channelId}"]`);
+    if (!row) {
+        console.error(`Could not find row for channel ${channelId}`);
+        return;
+    }
+    
+    // Get all buttons in the row
+    const buttons = row.querySelectorAll('button');
+    
+    // Find the action button (Start or Stop)
+    const actionButton = Array.from(buttons).find(btn => {
+        return (isStarting && btn.textContent.trim() === 'Start') || 
+               (!isStarting && btn.textContent.trim() === 'Stop');
+    });
+    
+    if (!actionButton) {
+        console.error(`Could not find ${isStarting ? 'Start' : 'Stop'} button for channel ${channelId}`);
+        return;
+    }
+    
+    if (actionButton.disabled) return;
+    
+    // Disable the button and show animation
+    actionButton.disabled = true;
+    actionButton.textContent = isStarting ? 'Starting...' : 'Stopping...';
+    
+    try {
+        const response = await fetch(
+            `${API_BASE}/channels/${channelId}/${isStarting ? 'start' : 'stop'}`,
+            { 
+                method: 'PUT',
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            }
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Failed to ${isStarting ? 'start' : 'stop'} channel`);
+        }
+
+        // Wait a bit for the operation to take effect
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await this.loadChannels(true);
+        
+    } catch (error) {
+        console.error('Error updating channel status:', error);
+        alert(`Error ${isStarting ? 'starting' : 'stopping'} channel: ${error.message}`);
+        
+        // Reset button state on error
+        if (actionButton) {
+            actionButton.disabled = false;
+            actionButton.textContent = isStarting ? 'Start' : 'Stop';
+        }
+    }
+}
+    
+    async handleDeleteChannel(channelId) {
+        if (!confirm('Are you sure you want to delete this channel?')) return;
+        
+        try {
+            const response = await fetch(`${API_BASE}/channels/${channelId}`, {
+                method: 'DELETE',
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to delete channel');
+            }
+            
+            await this.loadChannels();
+        } catch (error) {
+            console.error('Error deleting channel:', error);
+            alert(`Error deleting channel: ${error.message}`);
+        }
+    }
+    
+    openAddModal() {
+        // Reset form fields
+        document.getElementById('channelForm').reset();
+        document.getElementById('channelId').value = '';
+        document.getElementById('modalTitle').textContent = 'Add New Channel';
+        
+        // Set default fields visibility
+        document.getElementById('receiveFields').classList.remove('hidden');
+        document.getElementById('sendFields').classList.add('hidden');
+        
+        // Get next available metrics port
+        this.getNextMetricsPort().then(port => {
+            document.getElementById('metricsPort').value = port;
+        });
+        
+        // Show the modal
+        document.getElementById('channelModal').classList.remove('hidden');
+    }
+    
+    async openEditModal(channelId) {
+    // Reset form
+    document.getElementById('channelForm').reset();
+    
+    // Set modal title
+    document.getElementById('modalTitle').textContent = 'Edit Channel';
+    document.getElementById('channelId').value = channelId;
+    
+    try {
+        // Fetch channel data first
+        const channelResponse = await fetch(`${API_BASE}/channels/${channelId}`);
+        if (!channelResponse.ok) {
+            const errorText = await channelResponse.text();
+            console.error(`Channel fetch error: ${errorText}`);
+            throw new Error(`Failed to load channel data: ${errorText}`);
+        }
+        const channel = await channelResponse.json();
+        
+        // Determine channel type
+        // const isReceiveChannel = channel.input && channel.input.startsWith('rist://');
+        const isReceiveChannel = typeof channel.input === 'string' && channel.input.startsWith('rist://');
+        document.getElementById('channelType').value = isReceiveChannel ? 'receive' : 'send';
+        
+        // Fetch backup sources only for receive channels
+        let backupSources = { backup_sources: [] };
+        if (isReceiveChannel) {
+            try {
+                const backupSourcesResponse = await fetch(`${API_BASE}/channels/${channelId}/backup-sources`);
+                if (backupSourcesResponse.ok) {
+                    backupSources = await backupSourcesResponse.json();
+                }
+            } catch (backupError) {
+                console.warn(`Error fetching backup sources for receive channel ${channelId}:`, backupError);
+            }
+        }
+        
+        // Toggle appropriate fields
+        if (isReceiveChannel) {
+            document.getElementById('receiveFields').classList.remove('hidden');
+            document.getElementById('sendFields').classList.add('hidden');
+            
+            // Parse RIST URL
+            const ristUrl = new URL(channel.input.replace('rist://', 'http://'));
+            document.getElementById('ipAddress').value = ristUrl.hostname;
+            document.getElementById('port').value = ristUrl.port;
+            
+            // Parse query parameters if present
+            if (ristUrl.search) {
+                const params = new URLSearchParams(ristUrl.search);
+                if (params.has('virt-dst-port')) {
+                    document.getElementById('virtDstPort').value = params.get('virt-dst-port');
+                }
+            }
+            
+            // Parse output URL
+            const outputUrl = new URL(channel.output.replace('udp://', 'http://'));
+            document.getElementById('multicastIp').value = outputUrl.hostname;
+            document.getElementById('multicastPort').value = outputUrl.port;
+        } else {
+            document.getElementById('receiveFields').classList.add('hidden');
+            document.getElementById('sendFields').classList.remove('hidden');
+            
+            // Parse RIST URL
+            const ristUrl = new URL(channel.output.replace('rist://', 'http://'));
+            
+            if (channel.output.startsWith('rist://@'))
+             {
+              document.getElementById('ipAddress').value = '@' + ristUrl.hostname;
+              }else{
+               document.getElementById('ipAddress').value = ristUrl.hostname;
+              }
+            
+            
+            document.getElementById('port').value = ristUrl.port;
+            
+            // Parse query parameters if present
+            if (ristUrl.search) {
+                const params = new URLSearchParams(ristUrl.search);
+                if (params.has('virt-src-port')) {
+                    document.getElementById('virtSrcPort').value = params.get('virt-src-port');
+                }
+            }
+            
+            // Input source
+            document.getElementById('inputSource').value = channel.input;
+        }
+        
+        // Common fields
+        document.getElementById('name').value = channel.name;
+        document.getElementById('buffer').value = channel.settings.buffer;
+        document.getElementById('encryptionType').value = channel.settings.encryption_type || '';
+        document.getElementById('secret').value = channel.settings.secret || '';
+        document.getElementById('metricsPort').value = channel.metrics_port;
+        
+        // Backup sources (only for receive channels)
+        document.getElementById('backupSources').value = 
+            backupSources.backup_sources ? 
+            backupSources.backup_sources.join('\n') : '';
+        
+        // Show the modal
+        document.getElementById('channelModal').classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Detailed error loading channel data:', error);
+        alert(`Error loading channel data: ${error.message}`);
+    }
+}
+    
+    closeModal() {
+        document.getElementById('channelModal').classList.add('hidden');
+    }
+    
+    async getNextMetricsPort() {
+        try {
+            const response = await fetch(`${API_BASE}/channels/next`);
+            const data = await response.json();
+            return data.metrics_port;
+        } catch (error) {
+            console.error('Error getting next metrics port:', error);
+            return 9201; // Default fallback
+        }
+    }
+    
+    async handleSaveChannel() {
+    const channelId = document.getElementById('channelId').value;
+    const isEdit = channelId !== '';
+    
+    // Get form values
+    const name = document.getElementById('name').value;
+    const channelType = document.getElementById('channelType').value;
+    const ipAddress = document.getElementById('ipAddress').value;
+    const port = document.getElementById('port').value;
+    const buffer = parseInt(document.getElementById('buffer').value);
+    const encryptionType = document.getElementById('encryptionType').value;
+    const secret = document.getElementById('secret').value;
+    const backupSourcesText = document.getElementById('backupSources').value;
+    
+    try {
+        // Create new channel ID if adding
+        const targetChannelId = isEdit ? channelId : await this.getNextChannelId();
+        
+        if (channelType === 'receive') {
+            // Receive channel configuration
+            const virtDstPort = document.getElementById('virtDstPort').value;
+            const multicastIp = document.getElementById('multicastIp').value;
+            const multicastPort = document.getElementById('multicastPort').value;
+            
+            // Prepare receive channel data
+            const receiveChannelData = {
+                name: name,
+                enabled: true,
+                metrics_port: parseInt(document.getElementById('metricsPort').value),
+                source_ip: ipAddress,
+                source_port: parseInt(port),
+                virt_dst_port: virtDstPort ? parseInt(virtDstPort) : null,
+                multicast_ip: multicastIp,
+                multicast_port: parseInt(multicastPort),
+                buffer: buffer,
+                encryption_type: encryptionType ? parseInt(encryptionType) : null,
+                secret: secret || null,
+                backup_sources: backupSourcesText ? 
+                    backupSourcesText.split('\n')
+                        .map(source => source.trim())
+                        .filter(source => source !== '') 
+                    : []
+            };
+            
+            console.log(`${isEdit ? 'Updating' : 'Creating'} receive channel:`, receiveChannelData);
+            
+            // For existing channels, use PUT to update
+            if (isEdit) {
+    // First, update the channel with the new PUT endpoint
+    const channelResponse = await fetch(`${API_BASE}/channels/${targetChannelId}/update`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            name: receiveChannelData.name,
+            enabled: receiveChannelData.enabled,
+            input: `rist://${receiveChannelData.source_ip}:${receiveChannelData.source_port}` + 
+                  (receiveChannelData.virt_dst_port ? `?virt-dst-port=${receiveChannelData.virt_dst_port}` : ""),
+            output: `udp://${receiveChannelData.multicast_ip}:${receiveChannelData.multicast_port}`,
+            settings: {
+                profile: 1,
+                virt_src_port: receiveChannelData.virt_dst_port,
+                buffer: receiveChannelData.buffer,
+                encryption_type: receiveChannelData.encryption_type,
+                secret: receiveChannelData.secret
+            },
+            metrics_port: receiveChannelData.metrics_port
+        })
+    });                
+                if (!channelResponse.ok) {
+                    const errorData = await channelResponse.json();
+                    throw new Error(errorData.detail || 'Failed to update channel');
+                }
+                
+                // Then update backup sources separately
+                if (receiveChannelData.backup_sources && receiveChannelData.backup_sources.length > 0) {
+                    const backupResponse = await fetch(`${API_BASE}/channels/${targetChannelId}/backup-sources`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(receiveChannelData.backup_sources)
+                    });
+                    
+                    if (!backupResponse.ok) {
+                        const errorData = await backupResponse.json();
+                        throw new Error(errorData.detail || 'Failed to update backup sources');
+                    }
+                }
+            } else {
+                // For new channels, use the specialized POST endpoint
+                const channelResponse = await fetch(`${API_BASE}/channels/${targetChannelId}/receive`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(receiveChannelData)
+                });
+                
+                if (!channelResponse.ok) {
+                    const errorData = await channelResponse.json();
+                    throw new Error(errorData.detail || 'Failed to create receive channel');
+                }
+            }
+            
+        } else {
+            // Send channel configuration
+            const virtSrcPort = document.getElementById('virtSrcPort').value;
+            const inputSource = document.getElementById('inputSource').value;
+            
+            // Prepare send channel data
+            const sendChannelData = {
+                name: name,
+                enabled: true,
+                metrics_port: parseInt(document.getElementById('metricsPort').value),
+                input_source: inputSource,
+                destination_ip: ipAddress,
+                destination_port: parseInt(port),
+                virt_src_port: virtSrcPort ? parseInt(virtSrcPort) : null,
+                buffer: buffer,
+                encryption_type: encryptionType ? parseInt(encryptionType) : null,
+                secret: secret || null
+            };
+            
+            console.log(`${isEdit ? 'Updating' : 'Creating'} send channel:`, sendChannelData);
+            
+            // For existing channels, use PUT to update
+            if (isEdit) {
+    const channelResponse = await fetch(`${API_BASE}/channels/${targetChannelId}/update`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            name: sendChannelData.name,
+            enabled: sendChannelData.enabled,
+            input: sendChannelData.input_source,
+            output: `rist://${sendChannelData.destination_ip}:${sendChannelData.destination_port}` +
+                    (sendChannelData.virt_src_port ? `?virt-dst-port=${sendChannelData.virt_src_port}` : ""),
+            settings: {
+                profile: 1,
+                virt_src_port: sendChannelData.virt_src_port,
+                buffer: sendChannelData.buffer,
+                encryption_type: sendChannelData.encryption_type,
+                secret: sendChannelData.secret
+            },
+            metrics_port: sendChannelData.metrics_port
+        })
+    });
+    
+    if (!channelResponse.ok) {
+        const errorData = await channelResponse.json();
+        throw new Error(errorData.detail || 'Failed to update channel');
+    }
+} else {
+                // For new channels, use the specialized POST endpoint
+                const channelResponse = await fetch(`${API_BASE}/channels/${targetChannelId}/send`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(sendChannelData)
+                });
+                
+                if (!channelResponse.ok) {
+                    const errorData = await channelResponse.json();
+                    throw new Error(errorData.detail || 'Failed to create send channel');
+                }
+            }
+        }
+        
+        // Close modal and refresh channel list
+        this.closeModal();
+        await this.loadChannels();
+        
+    } catch (error) {
+        console.error('Error saving channel:', error);
+        alert(`Error ${isEdit ? 'updating' : 'creating'} channel: ${error.message}`);
+    }
+}
+    
+    async getNextChannelId() {
+        try {
+            const response = await fetch(`${API_BASE}/channels/next`);
+            const data = await response.json();
+            return data.channel_id;
+        } catch (error) {
+            console.error('Error getting next channel ID:', error);
+            
+            // Generate a fallback ID if API fails
+            const channelNumbers = Object.keys(this.channels)
+                .filter(id => id.startsWith('channel'))
+                .map(id => parseInt(id.replace('channel', '')) || 0);
+            
+            const nextNumber = channelNumbers.length ? Math.max(...channelNumbers) + 1 : 1;
+            return `channel${nextNumber}`;
+        }
+    }
+    
+    startPolling(interval = 5000) {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+        }
+        
+        this.pollingInterval = setInterval(() => this.loadChannels(), interval);
+    }
+    
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+    }
+}
+
+const channelManager = new ChannelManager();
+
+document.addEventListener('DOMContentLoaded', () => {
+    channelManager.loadChannels();
+    channelManager.startPolling();
+    
+    window.addEventListener('unload', () => {
+        channelManager.stopPolling();
+    });
+});
+
+
+
+
+
+
+function initTranscoderEvents() {
+    // Transcoder modal controls
+    document.getElementById('addTranscoderBtn').addEventListener('click', openTranscoderModal);
+    document.getElementById('closeTranscoderModal').addEventListener('click', closeTranscoderModal);
+    document.getElementById('cancelTranscoderButton').addEventListener('click', closeTranscoderModal);
+    document.getElementById('transcoderForm').addEventListener('submit', handleSaveTranscoder);
+    
+    // Toggle form fields based on codec selection
+    document.getElementById('videoCodec').addEventListener('change', function(e) {
+        const isCopy = e.target.value === 'copy';
+        const videoFields = ['videoResolution', 'bFrames', 'videoProfile', 'videoPreset', 'videoBitrate', 'deinterlace'];
+        videoFields.forEach(id => {
+            const element = document.getElementById(id);
+            element.disabled = isCopy;
+            element.parentElement.classList.toggle('opacity-50', isCopy);
+        });
+    });
+    
+    document.getElementById('audioCodec').addEventListener('change', function(e) {
+        const isCopy = e.target.value === 'copy';
+        const audioFields = ['sampleRate', 'audioChannels', 'audioBitrate'];
+        audioFields.forEach(id => {
+            const element = document.getElementById(id);
+            element.disabled = isCopy;
+            element.parentElement.classList.toggle('opacity-50', isCopy);
+        });
+    });
+}
+
+async function openTranscoderModal() {
+    // Reset form
+    document.getElementById('transcoderForm').reset();
+    document.getElementById('transcoderId').value = '';
+    document.getElementById('transcoderModalTitle').textContent = 'Add New Transcoder';
+    
+    // Load available devices
+    try {
+        const devices = await transcoderClient.getAvailableDevices();
+        const deviceSelect = document.getElementById('videoDevice');
+        
+        // Clear existing options
+        deviceSelect.innerHTML = '';
+        
+        // Add options for each device
+        devices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.id;
+            option.textContent = device.name;
+            deviceSelect.appendChild(option);
+        });
+        
+        // Add a hidden field for metrics port if needed
+        if (!document.getElementById('metricsPort')) {
+            const metricsPortField = document.createElement('input');
+            metricsPortField.type = 'hidden';
+            metricsPortField.id = 'metricsPort';
+            document.getElementById('transcoderForm').appendChild(metricsPortField);
+        }
+        
+        // For new transcoders, we don't set the metrics port here
+        // It will be fetched when the form is submitted
+        document.getElementById('metricsPort').value = '';
+        
+    } catch (error) {
+        console.error('Error loading devices:', error);
+        // Add CPU as fallback
+        const deviceSelect = document.getElementById('videoDevice');
+        deviceSelect.innerHTML = '<option value="cpu">CPU</option>';
+    }
+    
+    // Show the modal
+    document.getElementById('transcoderModal').classList.remove('hidden');
+    
+    // Ensure fields are enabled/disabled properly
+    document.getElementById('videoCodec').dispatchEvent(new Event('change'));
+    document.getElementById('audioCodec').dispatchEvent(new Event('change'));
+}
+
+function closeTranscoderModal() {
+    document.getElementById('transcoderModal').classList.add('hidden');
+}
+
+
+
+async function openEditTranscoderModal(transcoderId) {
+    try {
+        // Load available devices first
+        await openTranscoderModal();
+        
+        // Get the transcoder data
+        const transcoder = await transcoderClient.getTranscoder(transcoderId);
+        
+        // Set the form title and ID
+        document.getElementById('transcoderModalTitle').textContent = 'Edit Transcoder';
+        document.getElementById('transcoderId').value = transcoderId;
+        
+        // Fill the form with transcoder data
+        document.getElementById('transcoderName').value = transcoder.name;
+        document.getElementById('inputAddress').value = transcoder.input.address;
+        document.getElementById('programPid').value = transcoder.input.program_pid || '';
+        document.getElementById('videoPid').value = transcoder.input.video_pid || '';
+        document.getElementById('audioPid').value = transcoder.input.audio_pid || '';
+        
+        document.getElementById('videoDevice').value = transcoder.video.device;
+        document.getElementById('videoCodec').value = transcoder.video.codec;
+        document.getElementById('videoResolution').value = transcoder.video.resolution;
+        document.getElementById('bFrames').value = transcoder.video.b_frames;
+        document.getElementById('videoProfile').value = transcoder.video.profile;
+        document.getElementById('videoPreset').value = transcoder.video.preset;
+        document.getElementById('deinterlace').checked = transcoder.video.deinterlace;
+        document.getElementById('videoBitrate').value = transcoder.video.bitrate;
+        
+        document.getElementById('audioCodec').value = transcoder.audio.codec;
+        document.getElementById('sampleRate').value = transcoder.audio.sample_rate;
+        document.getElementById('audioChannels').value = transcoder.audio.channels;
+        document.getElementById('audioBitrate').value = transcoder.audio.bitrate;
+        
+        document.getElementById('outputAddress').value = transcoder.output.address;
+        document.getElementById('outputProgramPid').value = transcoder.output.program_pid || '';
+        document.getElementById('outputVideoPid').value = transcoder.output.video_pid || '';
+        document.getElementById('outputAudioPid').value = transcoder.output.audio_pid || '';
+        document.getElementById('muxBitrate').value = transcoder.output.mux_bitrate || '';
+        
+        // Save the metrics port
+        document.getElementById('metricsPort').value = transcoder.metrics_port || '';
+        
+        // Trigger codec change events to handle disabled fields
+        document.getElementById('videoCodec').dispatchEvent(new Event('change'));
+        document.getElementById('audioCodec').dispatchEvent(new Event('change'));
+    } catch (error) {
+        console.error('Error loading transcoder for editing:', error);
+        alert(`Error loading transcoder: ${error.message}`);
+        closeTranscoderModal();
+    }
+}
+
+
+
+// Create a global instance of the client
+const transcoderClient = new TranscoderClient();
+
+async function openEditTranscoderModal(transcoderId) {
+    try {
+        // Load available devices first
+        await openTranscoderModal();
+        
+        // Get the transcoder data
+        const transcoder = await transcoderClient.getTranscoder(transcoderId);
+        
+        // Set the form title and ID
+        document.getElementById('transcoderModalTitle').textContent = 'Edit Transcoder';
+        document.getElementById('transcoderId').value = transcoderId;
+        
+        // Fill the form with transcoder data
+        document.getElementById('transcoderName').value = transcoder.name;
+        document.getElementById('inputAddress').value = transcoder.input.address;
+        document.getElementById('programPid').value = transcoder.input.program_pid || '';
+        document.getElementById('videoPid').value = transcoder.input.video_pid || '';
+        document.getElementById('audioPid').value = transcoder.input.audio_pid || '';
+        
+        document.getElementById('videoDevice').value = transcoder.video.device;
+        document.getElementById('videoCodec').value = transcoder.video.codec;
+        document.getElementById('videoResolution').value = transcoder.video.resolution;
+        document.getElementById('bFrames').value = transcoder.video.b_frames;
+        document.getElementById('videoProfile').value = transcoder.video.profile;
+        document.getElementById('videoPreset').value = transcoder.video.preset;
+        document.getElementById('deinterlace').checked = transcoder.video.deinterlace;
+        document.getElementById('videoBitrate').value = transcoder.video.bitrate;
+        
+        document.getElementById('audioCodec').value = transcoder.audio.codec;
+        document.getElementById('sampleRate').value = transcoder.audio.sample_rate;
+        document.getElementById('audioChannels').value = transcoder.audio.channels;
+        document.getElementById('audioBitrate').value = transcoder.audio.bitrate;
+        
+        document.getElementById('outputAddress').value = transcoder.output.address;
+        document.getElementById('outputProgramPid').value = transcoder.output.program_pid || '';
+        document.getElementById('outputVideoPid').value = transcoder.output.video_pid || '';
+        document.getElementById('outputAudioPid').value = transcoder.output.audio_pid || '';
+        document.getElementById('muxBitrate').value = transcoder.output.mux_bitrate || '';
+        
+        // Save the metrics port
+        document.getElementById('metricsPort').value = transcoder.metrics_port || '';
+        
+        // Trigger codec change events to handle disabled fields
+        document.getElementById('videoCodec').dispatchEvent(new Event('change'));
+        document.getElementById('audioCodec').dispatchEvent(new Event('change'));
+    } catch (error) {
+        console.error('Error loading transcoder for editing:', error);
+        alert(`Error loading transcoder: ${error.message}`);
+        closeTranscoderModal();
+    }
+}
+
+async function handleSaveTranscoder(e) {
+    e.preventDefault();
+    
+    // Get all form values
+    let transcoderId = document.getElementById('transcoderId').value;
+    const isEdit = transcoderId !== '';
+    
+    // Collect form data
+    const formData = {
+        transcoderName: document.getElementById('transcoderName').value,
+        inputAddress: document.getElementById('inputAddress').value,
+        programPid: document.getElementById('programPid').value,
+        videoPid: document.getElementById('videoPid').value,
+        audioPid: document.getElementById('audioPid').value,
+        videoDevice: document.getElementById('videoDevice').value,
+        videoCodec: document.getElementById('videoCodec').value,
+        videoResolution: document.getElementById('videoResolution').value,
+        bFrames: document.getElementById('bFrames').value,
+        videoProfile: document.getElementById('videoProfile').value,
+        videoPreset: document.getElementById('videoPreset').value,
+        deinterlace: document.getElementById('deinterlace').checked,
+        videoBitrate: document.getElementById('videoBitrate').value,
+        audioCodec: document.getElementById('audioCodec').value,
+        sampleRate: document.getElementById('sampleRate').value,
+        audioChannels: document.getElementById('audioChannels').value,
+        audioBitrate: document.getElementById('audioBitrate').value,
+        outputAddress: document.getElementById('outputAddress').value,
+        outputProgramPid: document.getElementById('outputProgramPid').value,
+        outputVideoPid: document.getElementById('outputVideoPid').value,
+        outputAudioPid: document.getElementById('outputAudioPid').value,
+        muxBitrate: document.getElementById('muxBitrate').value,
+        metricsPort: document.getElementById('metricsPort').value
+    };
+    
+    try {
+        // If editing, update existing transcoder
+        if (isEdit) {
+            // If metricsPort is empty, get it from the current transcoder
+            if (!formData.metricsPort) {
+                const currentTranscoder = await transcoderClient.getTranscoder(transcoderId);
+                formData.metricsPort = currentTranscoder.metrics_port;
+            }
+            
+            // Format data for API
+            const transcoderData = transcoderClient.formatTranscoderData(formData);
+            
+            await transcoderClient.updateTranscoder(transcoderId, transcoderData);
+            alert(`Transcoder ${transcoderData.name} updated successfully`);
+        } 
+        // Otherwise create a new one
+        else {
+            // Get next available ID and metrics port if not specified
+            if (!transcoderId) {
+                const nextInfo = await transcoderClient.getNextTranscoderId();
+                transcoderId = nextInfo.transcoder_id;
+                formData.metricsPort = nextInfo.metrics_port;
+            }
+            
+            // Format data for API
+            const transcoderData = transcoderClient.formatTranscoderData(formData);
+            
+            await transcoderClient.createTranscoder(transcoderId, transcoderData);
+            alert(`Transcoder ${transcoderData.name} created successfully`);
+        }
+        
+        closeTranscoderModal();
+        // Reload the channel list if necessary
+        if (typeof channelManager !== 'undefined' && channelManager.loadChannels) {
+            channelManager.loadChannels();
+        }
+    } catch (error) {
+        console.error('Error saving transcoder:', error);
+        alert(`Error ${isEdit ? 'updating' : 'creating'} transcoder: ${error.message}`);
+    }
+}
+
+// Add a global reference to the window to make it accessible from HTML
+window.openEditTranscoderModal = openEditTranscoderModal;
+
+// Initialize transcoder events when document is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    initTranscoderEvents();
+});
+
+
+
+
+    </script>
+</body>
+</html>

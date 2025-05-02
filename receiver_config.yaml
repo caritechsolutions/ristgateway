@@ -1,0 +1,16 @@
+channels:
+  channel2:
+    enabled: true
+    input: rist://199.71.214.97:4600?virt-dst-port=4601
+    last_error: null
+    metrics_port: 9202
+    name: bbcw264_hotel
+    output: udp://239.7.2.2:10001
+    process_id: null
+    settings:
+      buffer: 1000
+      encryption_type: null
+      profile: 1
+      secret: null
+      virt_src_port: 4601
+    status: running

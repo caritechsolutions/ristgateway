@@ -1,0 +1,14 @@
+[Unit]
+Description=RIST API Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/ristgateway
+ExecStart=/usr/bin/python3 /root/ristgateway/gateway_api.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

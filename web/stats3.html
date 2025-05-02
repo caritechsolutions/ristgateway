@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>RIST Transcoder Statistics</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        .chart-container {
+            height: 240px;
+            position: relative;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold" id="transcoderTitle">Transcoder Statistics</h1>
+            <div class="space-x-4">
+                <span id="statusBadge" class="px-3 py-1 rounded-full text-sm font-semibold"></span>
+                <a href="/" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Back</a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Input/Output Stats -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Transcoder Overview</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Status</p>
+                        <p id="status" class="text-2xl font-bold p-1 rounded">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Uptime</p>
+                        <p id="uptime" class="text-2xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Input Format</p>
+                        <p id="input_format" class="text-2xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Output Format</p>
+                        <p id="output_format" class="text-2xl font-bold">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bitrate Chart -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Bitrate</h2>
+                <div class="chart-container">
+                    <canvas id="bitrateChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Input Stats -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Input Statistics</h2>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="p-4 bg-gray-50 rounded">
+                            <p class="text-sm text-gray-600">Current Bitrate</p>
+                            <p id="input_bitrate" class="text-xl font-bold">-</p>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded">
+                            <p class="text-sm text-gray-600">Packets Received</p>
+                            <p id="input_packets" class="text-xl font-bold">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Output Stats -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Output Statistics</h2>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="p-4 bg-gray-50 rounded">
+                            <p class="text-sm text-gray-600">Current Bitrate</p>
+                            <p id="output_bitrate" class="text-xl font-bold">-</p>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded">
+                            <p class="text-sm text-gray-600">Packets Sent</p>
+                            <p id="output_packets" class="text-xl font-bold">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
+        const transcoderId = new URLSearchParams(window.location.search).get('channel');
+        let bitrateChart;
+        const maxDataPoints = 20;
+        const bitrateData = {
+            input: [],
+            output: []
+        };
+        const timeLabels = [];
+
+        function formatBitrate(bps) {
+    // If the input is already in Kbps, convert to Mbps
+    const value = typeof bps === 'number' ? bps : parseFloat(bps);
+    
+    if (value >= 1000) return (value / 1000).toFixed(2) + ' Mbps';
+    return value.toFixed(2) + ' Kbps';
+}
+
+        function formatUptime(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            
+            if (hours > 0) {
+                return `${hours}h ${minutes}m ${secs}s`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${secs}s`;
+            } else {
+                return `${secs}s`;
+            }
+        }
+
+        function updateStatusDisplay(status) {
+            const statusBadge = document.getElementById('statusBadge');
+            const statusText = document.getElementById('status');
+            
+            if (status === 'running') {
+                statusBadge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800';
+                statusBadge.textContent = 'Running';
+                statusText.className = 'text-2xl font-bold p-1 rounded bg-green-100 text-green-800';
+                statusText.textContent = 'Running';
+            } else if (status === 'stopped') {
+                statusBadge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-800';
+                statusBadge.textContent = 'Stopped';
+                statusText.className = 'text-2xl font-bold p-1 rounded bg-gray-100 text-gray-800';
+                statusText.textContent = 'Stopped';
+            } else {
+                statusBadge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800';
+                statusBadge.textContent = 'Error';
+                statusText.className = 'text-2xl font-bold p-1 rounded bg-red-100 text-red-800';
+                statusText.textContent = 'Error';
+            }
+        }
+
+        function updateStats(metrics) {
+            // Update status
+            updateStatusDisplay(metrics.status);
+            
+            // Update uptime
+            document.getElementById('uptime').textContent = formatUptime(metrics.uptime);
+            
+            // Update format info
+            document.getElementById('input_format').textContent = `Video: ${metrics.video_codec || 'Unknown'}`;
+            document.getElementById('output_format').textContent = `${metrics.video_codec || 'Unknown'} @ ${metrics.video_bitrate_kbps}k`;
+            
+            // Update bitrates
+            document.getElementById('input_bitrate').textContent = formatBitrate(metrics.input_bitrate);
+            document.getElementById('output_bitrate').textContent = formatBitrate(metrics.output_bitrate);
+            
+            // Update packet counters
+            document.getElementById('input_packets').textContent = metrics.packets?.input?.toLocaleString() || '-';
+            document.getElementById('output_packets').textContent = metrics.packets?.output?.toLocaleString() || '-';
+            
+            // Update chart data
+            const now = new Date().toLocaleTimeString();
+            timeLabels.push(now);
+            bitrateData.input.push(metrics.input_bitrate_mbps || 0);
+            bitrateData.output.push(metrics.output_bitrate_mbps || 0);
+            
+            if (timeLabels.length > maxDataPoints) {
+                timeLabels.shift();
+                bitrateData.input.shift();
+                bitrateData.output.shift();
+            }
+            
+            if (bitrateChart) {
+                bitrateChart.data.labels = timeLabels;
+                bitrateChart.data.datasets[0].data = bitrateData.input;
+                bitrateChart.data.datasets[1].data = bitrateData.output;
+                bitrateChart.update();
+            }
+        }
+
+        function initCharts() {
+            const bitrateCtx = document.getElementById('bitrateChart').getContext('2d');
+            bitrateChart = new Chart(bitrateCtx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: 'Input',
+                            data: bitrateData.input,
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Output',
+                            data: bitrateData.output,
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Mbps'
+                            }
+                        },
+                        x: {
+                            display: true,
+                            title: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    animation: false
+                }
+            });
+        }
+
+        async function loadTranscoderInfo() {
+            try {
+                const response = await fetch(`${API_BASE}/transcoders/${transcoderId}`);
+                if (!response.ok) throw new Error('Failed to load transcoder info');
+                const transcoder = await response.json();
+                document.getElementById('transcoderTitle').textContent = `${transcoder.name} Statistics`;
+            } catch (error) {
+                console.error('Error loading transcoder info:', error);
+            }
+        }
+
+        async function updateMetrics() {
+            try {
+                const response = await fetch(`${API_BASE}/transcoders/${transcoderId}/metrics`, {
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Failed to fetch metrics');
+                const metrics = await response.json();
+                updateStats(metrics);
+            } catch (error) {
+                console.error('Error fetching metrics:', error);
+                updateStatusDisplay('error');
+            }
+        }
+
+        async function init() {
+            try {
+                await loadTranscoderInfo();
+                initCharts();
+                await updateMetrics();
+                
+                // Poll for metrics every second
+                setInterval(updateMetrics, 1000);
+            } catch (error) {
+                console.error('Initialization error:', error);
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    </script>
+</body>
+</html>

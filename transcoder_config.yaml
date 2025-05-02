@@ -1,0 +1,31 @@
+transcoders:
+  transcoder1:
+    audio:
+      bitrate: 128
+      channels: bypass
+      codec: aac
+      sample_rate: bypass
+    enabled: true
+    input:
+      address: udp://239.7.2.2:10001
+      audio_pid: 1
+      program_pid: 1
+      video_pid: 1
+    metrics_port: 9901
+    name: bbc_SD
+    output:
+      address: udp://239.7.2.2:59500
+      audio_pid: null
+      mux_bitrate: null
+      program_pid: null
+      video_pid: null
+    status: stopped
+    video:
+      b_frames: 0
+      bitrate: 500
+      codec: h264
+      deinterlace: false
+      device: cpu
+      preset: fast
+      profile: high
+      resolution: same

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Channel Network Flow</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; }
+        #mynetwork {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: -10;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold" id="channelName"></h1>
+            <a href="dash.html" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700">Back</a>
+        </div>
+    </div>
+
+    <div id="mynetwork"></div>
+   
+    <script>
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
+        const channelId = new URLSearchParams(window.location.search).get('id');
+
+        async function fetchNetworkFlow() {
+            try {
+                const response = await fetch(`${API_BASE}/channels/${channelId}/network-flow`);
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status} ${response.statusText}`);
+                }
+                const data = await response.json();
+                console.log("Network flow data:", data); // Debug: Log the full data
+                return data;
+            } catch (error) {
+                console.error("Error fetching network flow:", error);
+                alert("Failed to fetch network data. See console for details.");
+                return null;
+            }
+        }
+
+        function getQualityColor(quality) {
+            return `hsl(${quality * 1.2}, 100%, 50%)`;
+        }
+
+        function formatBits(bits, decimals = 2) {
+            if (bits === 0) return '0 bps';
+            const k = 1000;
+            const sizes = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
+            const i = Math.floor(Math.log(bits) / Math.log(k));
+            return parseFloat((bits / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
+        }
+
+        function getNodeShape(type) {
+            switch (type) {
+                case "external_rist":
+                case "external_udp":
+                    return "triangle";
+                case "receiver":
+                    return "box";
+                case "transcoder":
+                    return "hexagon";
+                case "sender":
+                    return "diamond";
+                case "client":
+                    return "circle";
+                default:
+                    return "ellipse";
+            }
+        }
+
+        function getNodeColor(type) {
+            switch (type) {
+                case "external_rist":
+                case "external_udp":
+                    return '#f8c300'; // Yellow
+                case "receiver":
+                    return '#00b5e2'; // Blue
+                case "transcoder":
+                    return '#4caf50'; // Green
+                case "sender":
+                    return '#9c27b0'; // Purple
+                case "client":
+                    return '#aaaaaa'; // Gray
+                default:
+                    return '#e91e63'; // Pink
+            }
+        }
+
+        async function createNetwork() {
+            const flowData = await fetchNetworkFlow();
+            if (!flowData) return;
+            
+            document.getElementById('channelName').textContent = flowData.name;
+            
+            const nodes = new vis.DataSet();
+            const edges = new vis.DataSet();
+            const processedNodeIds = new Set(); // Keep track of nodes we've already processed
+            
+            // Create a node for this channel
+            const mainNodeId = flowData.id;
+            nodes.add({
+                id: mainNodeId,
+                label: `${flowData.name}\n(${flowData.type})`,
+                shape: getNodeShape(flowData.type),
+                color: getNodeColor(flowData.type)
+            });
+            processedNodeIds.add(mainNodeId);
+            
+            // Add upstream node if present
+            if (flowData.upstream) {
+                const upstream = flowData.upstream;
+                const upstreamId = upstream.id || `upstream_${mainNodeId}`;
+                const nodeName = upstream.name || (upstream.type === "external_rist" ? "RIST Source" : "UDP Source");
+                
+                if (!processedNodeIds.has(upstreamId)) {
+                    nodes.add({
+                        id: upstreamId,
+                        label: `${nodeName}\n${upstream.url}\nBW: ${formatBits(upstream.metrics.bandwidth_bps)}/s`,
+                        shape: getNodeShape(upstream.type),
+                        color: getNodeColor(upstream.type)
+                    });
+                    processedNodeIds.add(upstreamId);
+                }
+                
+                // Add edge from upstream to this node
+                edges.add({
+                    from: upstreamId,
+                    to: mainNodeId,
+                    arrows: 'to',
+                    color: getQualityColor(upstream.metrics.quality),
+                    label: `Quality: ${upstream.metrics.quality.toFixed(1)}%`,
+                    smooth: { type: 'curvedCW', roundness: 0.2 }
+                });
+            }
+            
+            // Recursive function to add downstream nodes and their connections
+            function addDownstreamNodes(downstreamArray, parentId) {
+                downstreamArray.forEach((downstream, index) => {
+                    // Generate a unique ID if one isn't provided
+                    const downstreamId = downstream.id || `downstream_${index}_${parentId}`;
+                    const nodeName = downstream.name || `Node ${index + 1}`;
+                    
+                    // Only add the node if we haven't processed it yet
+                    if (!processedNodeIds.has(downstreamId)) {
+                        nodes.add({
+                            id: downstreamId,
+                            label: `${nodeName}\n${downstream.url}\nBW: ${formatBits(downstream.metrics.bandwidth_bps)}/s`,
+                            shape: getNodeShape(downstream.type),
+                            color: getNodeColor(downstream.type)
+                        });
+                        processedNodeIds.add(downstreamId);
+                    }
+                    
+                    // Add edge from parent to this node
+                    edges.add({
+                        from: parentId,
+                        to: downstreamId,
+                        arrows: 'to',
+                        color: getQualityColor(downstream.metrics.quality),
+                        label: `Quality: ${downstream.metrics.quality.toFixed(1)}%`,
+                        smooth: { type: 'curvedCW', roundness: 0.2 }
+                    });
+                    
+                    // Add clients for senders
+                    if (downstream.type === 'sender' && downstream.clients && downstream.clients.length > 0) {
+                        downstream.clients.forEach((client, clientIndex) => {
+                            const clientId = client.id || `client_${clientIndex}_${downstreamId}`;
+                            
+                            if (!processedNodeIds.has(clientId)) {
+                                nodes.add({
+                                    id: clientId,
+                                    label: `${client.name}\n${client.url}\nBW: ${formatBits(client.metrics.bandwidth_bps)}/s`,
+                                    shape: 'circle',
+                                    color: '#aaaaaa'
+                                });
+                                processedNodeIds.add(clientId);
+                            }
+                            
+                            edges.add({
+                                from: downstreamId,
+                                to: clientId,
+                                arrows: 'to',
+                                color: getQualityColor(client.metrics.quality),
+                                label: `Quality: ${client.metrics.quality.toFixed(1)}%`,
+                                smooth: { type: 'curvedCW', roundness: 0.2 }
+                            });
+                        });
+                    }
+                    
+                    // Recursively process downstream connections from transcoders
+                    if (downstream.type === 'transcoder' && downstream.downstream && downstream.downstream.length > 0) {
+                        addDownstreamNodes(downstream.downstream, downstreamId);
+                    }
+                });
+            }
+            
+            // Process downstream connections
+            if (flowData.downstream && flowData.downstream.length > 0) {
+                addDownstreamNodes(flowData.downstream, mainNodeId);
+            }
+
+            const container = document.getElementById('mynetwork');
+            const data = { nodes, edges };
+            const options = {
+                layout: {
+                    hierarchical: {
+                        direction: 'UD', // Up to down
+                        sortMethod: 'directed',
+                        levelSeparation: 150,
+                        nodeSpacing: 200
+                    }
+                },
+                physics: false,
+                edges: {
+                    font: {
+                        size: 12
+                    },
+                    width: 2
+                },
+                nodes: {
+                    font: {
+                        size: 14
+                    },
+                    margin: 10
+                }
+            };
+
+            const network = new vis.Network(container, data, options);
+
+            network.on("doubleClick", function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    // If it's a receiver, transcoder, or sender node (not this channel), navigate to it
+                    const node = nodes.get(nodeId);
+                    if (node && nodeId !== mainNodeId && 
+                        (node.shape === 'box' || node.shape === 'diamond' || node.shape === 'hexagon')) {
+                        window.location.href = `diagram.html?id=${nodeId}`;
+                    } else {
+                        network.focus(nodeId, {
+                            scale: 1.2,
+                            animation: true
+                        });
+                    }
+                } else {
+                    network.fit({animation: true});
+                }
+            });
+
+            // Function to update the network data
+            async function updateNetworkData() {
+                try {
+                    const newFlowData = await fetchNetworkFlow();
+                    if (!newFlowData) return;
+                    
+                    // Update main node
+                    nodes.update({
+                        id: mainNodeId,
+                        label: `${newFlowData.name}\n(${newFlowData.type})\nBW: ${formatBits(newFlowData.metrics?.bandwidth_bps || 0)}/s`
+                    });
+                    
+                    // Update upstream if present
+                    if (newFlowData.upstream) {
+                        const upstream = newFlowData.upstream;
+                        const upstreamId = upstream.id || `upstream_${mainNodeId}`;
+                        
+                        // Update the node
+                        nodes.update({
+                            id: upstreamId,
+                            label: `${upstream.name || (upstream.type === "external_rist" ? "RIST Source" : "UDP Source")}\n${upstream.url}\nBW: ${formatBits(upstream.metrics.bandwidth_bps)}/s`
+                        });
+                        
+                        // Update the edge
+                        edges.update({
+                            from: upstreamId,
+                            to: mainNodeId,
+                            color: getQualityColor(upstream.metrics.quality),
+                            label: `Quality: ${upstream.metrics.quality.toFixed(1)}%`
+                        });
+                    }
+                    
+                    // Helper function to update downstream nodes
+                    function updateDownstreamNodes(downstreamArray, parentId) {
+                        downstreamArray.forEach((downstream, index) => {
+                            const downstreamId = downstream.id || `downstream_${index}_${parentId}`;
+                            
+                            // Update the node
+                            nodes.update({
+                                id: downstreamId,
+                                label: `${downstream.name || `Node ${index + 1}`}\n${downstream.url}\nBW: ${formatBits(downstream.metrics.bandwidth_bps)}/s`
+                            });
+                            
+                            // Update the edge
+                            edges.update({
+                                from: parentId,
+                                to: downstreamId,
+                                color: getQualityColor(downstream.metrics.quality),
+                                label: `Quality: ${downstream.metrics.quality.toFixed(1)}%`
+                            });
+                            
+                            // Update clients for senders
+                            if (downstream.type === 'sender' && downstream.clients && downstream.clients.length > 0) {
+                                downstream.clients.forEach((client, clientIndex) => {
+                                    const clientId = client.id || `client_${clientIndex}_${downstreamId}`;
+                                    
+                                    nodes.update({
+                                        id: clientId,
+                                        label: `${client.name}\n${client.url}\nBW: ${formatBits(client.metrics.bandwidth_bps)}/s`
+                                    });
+                                    
+                                    edges.update({
+                                        from: downstreamId,
+                                        to: clientId,
+                                        color: getQualityColor(client.metrics.quality),
+                                        label: `Quality: ${client.metrics.quality.toFixed(1)}%`
+                                    });
+                                });
+                            }
+                            
+                            // Recursively update downstream connections from transcoders
+                            if (downstream.type === 'transcoder' && downstream.downstream && downstream.downstream.length > 0) {
+                                updateDownstreamNodes(downstream.downstream, downstreamId);
+                            }
+                        });
+                    }
+                    
+                    // Update downstream connections
+                    if (newFlowData.downstream && newFlowData.downstream.length > 0) {
+                        updateDownstreamNodes(newFlowData.downstream, mainNodeId);
+                    }
+                    
+                } catch (error) {
+                    console.error("Error updating network data:", error);
+                }
+            }
+
+            // Update data every 5 seconds
+            setInterval(updateNetworkData, 5000);
+        }
+
+        // Initialize the network visualization
+        createNetwork();
+    </script>
+</body>
+</html>

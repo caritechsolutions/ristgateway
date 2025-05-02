@@ -1,0 +1,16 @@
+channels:
+  channel3:
+    enabled: true
+    input: udp://239.7.2.2:59500
+    last_error: null
+    metrics_port: 9203
+    name: bbcw
+    output: rist://@108.181.98.129:4600?virt-dst-port=4602
+    process_id: null
+    settings:
+      buffer: 1000
+      encryption_type: null
+      profile: 1
+      secret: null
+      virt_src_port: 4602
+    status: running

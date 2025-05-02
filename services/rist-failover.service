@@ -1,0 +1,15 @@
+[Unit]
+Description=RIST Receiver Failover Manager
+After=network.target rist-gateway-api.service
+Requires=rist-gateway-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/ristgateway
+ExecStart=/usr/bin/python3 /root/ristgateway/rist-failover.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
