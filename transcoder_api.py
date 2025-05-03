@@ -468,6 +468,13 @@ def get_transcoder_metrics(transcoder_id):
             # Parse JSON response from the binary transcoder
             metrics_data = response.json()
             
+            # Create processing data with correct structure
+            processing_data = {}
+            if "processing_metrics" in metrics_data:
+                processing_data.update(metrics_data["processing_metrics"])
+            if "input_info" in metrics_data:
+                processing_data["stream_info"] = metrics_data["input_info"]
+            
             # Map the data to our model
             return TranscoderMetrics(
                 cpu_usage=metrics_data.get("processing_metrics", {}).get("cpu_usage", 0.0),
@@ -489,7 +496,7 @@ def get_transcoder_metrics(transcoder_id):
                     "input": metrics_data.get("input_packets_total", 0),
                     "output": metrics_data.get("output_packets_total", 0)
                 },
-                processing=ProcessingMetrics(**metrics_data.get("processing", {})) if "processing" in metrics_data else None,
+                processing=ProcessingMetrics(**processing_data) if processing_data else None,
                 network=NetworkMetrics(**metrics_data.get("network", {})) if "network" in metrics_data else None,
                 av_sync=metrics_data.get("processing", {}).get("av_sync") if "processing" in metrics_data else None,
                 bitrate_history=metrics_data.get("bitrate_history"),
@@ -509,9 +516,9 @@ def get_transcoder_metrics(transcoder_id):
     except Exception as e:
         logger.error(f"Error getting transcoder metrics: {e}")
         return TranscoderMetrics(
-            status="error",
-            timestamp=datetime.datetime.now().isoformat()
-        ).dict()
+                status="error",
+                timestamp=datetime.datetime.now().isoformat()
+            ).dict()
 
 # Endpoints
 @router.get("/available-devices")
