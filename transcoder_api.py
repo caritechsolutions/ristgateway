@@ -40,9 +40,9 @@ devices_cache = {
 # Models for Transcoder API
 class TranscoderInput(BaseModel):
     address: str
-    program_pid: Optional[int] = None
-    video_pid: Optional[int] = None
-    audio_pid: Optional[int] = None
+    program_pid: Optional[int] = Field(default=-1, description="-1 means auto-detect")
+    video_pid: int
+    audio_pid: int
 
 class VideoConfig(BaseModel):
     device: str = "cpu"
@@ -53,6 +53,7 @@ class VideoConfig(BaseModel):
     preset: str
     deinterlace: bool = False
     bitrate: int  # kbps
+    keyframe_interval: int = 60
 
 class AudioConfig(BaseModel):
     codec: str
@@ -67,16 +68,100 @@ class TranscoderOutput(BaseModel):
     audio_pid: Optional[int] = None
     mux_bitrate: Optional[int] = None
 
+class BufferSettings(BaseModel):
+    buffer_mode: int = 0  # 0=default, 1=low-latency, 2=high-quality
+    leaky_mode: int = 0   # 0=none, 1=upstream, 2=downstream
+    buffer_size_mb: int = 4
+    buffer_time_ms: int = 500
+
+class AdvancedSettings(BaseModel):
+    watchdog_enabled: bool = False
+    watchdog_timeout: int = 10
+    add_clock_overlay: bool = False
+
 class TranscoderChannel(BaseModel):
     name: str
     input: TranscoderInput
     video: VideoConfig
     audio: AudioConfig
     output: TranscoderOutput
+    buffer_settings: Optional[BufferSettings] = Field(default_factory=BufferSettings)
+    advanced_settings: Optional[AdvancedSettings] = Field(default_factory=AdvancedSettings)
     enabled: bool = True
     status: str = "stopped"
     metrics_port: Optional[int] = None
 
+class QueueLevelData(BaseModel):
+    current_buffers: int = 0
+    current_bytes: int = 0
+    current_time_ns: int = 0
+    max_buffers: int = 0
+    max_bytes: int = 0
+    max_time_ns: int = 0
+    overflow_count: int = 0
+    underflow_count: int = 0
+    percent_full: float = 0.0
+
+class ProcessingMetrics(BaseModel):
+    frames_processed: int = 0
+    frames_dropped: int = 0
+    frames_delayed: int = 0
+    avg_qp_value: float = 0.0
+    min_qp_value: float = 0.0
+    max_qp_value: float = 0.0
+    avg_encoding_time_ms: float = 0.0
+    audio_video_drift_ms: float = 0.0
+    last_audio_pts: int = 0
+    last_video_pts: int = 0
+    max_drift_ms: float = 0.0
+    cpu_usage_percent: float = 0.0
+    memory_usage_bytes: int = 0
+    video_encoding_fps: float = 0.0
+    end_to_end_latency_ms: float = 0.0
+    last_input_pts: int = 0
+    last_output_pts: int = 0
+    timestamp_gap_ns: int = 0
+    pts_discontinuity: bool = False
+
+class NetworkMetrics(BaseModel):
+    input_jitter_ms: float = 0.0
+    output_jitter_ms: float = 0.0
+    total_input_packets: int = 0
+    total_output_packets: int = 0
+    dropped_packets: int = 0
+    avg_packet_size_bytes: float = 0.0
+    reconnection_attempts: int = 0
+    successful_reconnections: int = 0
+    last_reconnection_time: int = 0
+    network_stable: bool = True
+
+class TranscoderMetrics(BaseModel):
+    cpu_usage: float = 0.0
+    memory_usage: float = 0.0
+    output_bitrate: int = 0
+    input_bitrate: int = 0
+    input_bitrate_mbps: float = 0.0
+    output_bitrate_mbps: float = 0.0
+    frames_processed: int = 0
+    dropped_frames: int = 0
+    status: str = "stopped"
+    uptime: int = 0
+    timestamp: str = ""
+    video_codec: str = ""
+    video_bitrate_kbps: int = 0
+    audio_codec: str = ""
+    audio_bitrate_kbps: int = 0
+    packets: Dict[str, int] = Field(default_factory=dict)
+    processing: Optional[ProcessingMetrics] = None
+    network: Optional[NetworkMetrics] = None
+    av_sync: Optional[Dict[str, Any]] = None
+    bitrate_history: Optional[Dict[str, List[float]]] = None
+    input_video_queue: Optional[QueueLevelData] = None
+    input_audio_queue: Optional[QueueLevelData] = None
+    output_queue: Optional[QueueLevelData] = None
+    audio_output_queue: Optional[QueueLevelData] = None
+
+# Add the TranscoderStatus model that was missing
 class TranscoderStatus(BaseModel):
     cpu_usage: float
     memory_usage: float
@@ -268,17 +353,63 @@ def generate_transcoder_service_file(transcoder_id, config):
     # Get metrics port (with fallback)
     metrics_port = config.get("metrics_port", 9999)
     
-    # Basic service template
+    # Build command with all new options
+    cmd_parts = [
+        "/root/ristgateway/basic_transcoder",
+        "--input-uri", input_address,
+        "--output-uri", output_address,
+        "--video-codec", video_codec,
+        "--video-bitrate", str(video_bitrate),
+        "--audio-codec", audio_codec,
+        "--audio-bitrate", str(audio_bitrate),
+        "--stats-port", str(metrics_port),
+    ]
+    
+    # Add PID selections
+    if config["input"].get("program_pid", -1) >= 0:
+        cmd_parts.extend(["--program", str(config["input"]["program_pid"])])
+    if config["input"].get("video_pid"):
+        cmd_parts.extend(["--video-pid", str(config["input"]["video_pid"])])
+    if config["input"].get("audio_pid"):
+        cmd_parts.extend(["--audio-pid", str(config["input"]["audio_pid"])])
+    
+    # Add buffer settings
+    if "buffer_settings" in config:
+        buffer_settings = config["buffer_settings"]
+        cmd_parts.extend(["--buffer-mode", str(buffer_settings.get("buffer_mode", 0))])
+        cmd_parts.extend(["--leaky-mode", str(buffer_settings.get("leaky_mode", 0))])
+        cmd_parts.extend(["--buffer-size", str(buffer_settings.get("buffer_size_mb", 4))])
+        cmd_parts.extend(["--buffer-time", str(buffer_settings.get("buffer_time_ms", 500))])
+    
+    # Add video settings
+    if config["video"].get("preset"):
+        cmd_parts.extend(["--preset", config["video"]["preset"]])
+    if config["video"].get("keyframe_interval"):
+        cmd_parts.extend(["--keyframe-interval", str(config["video"]["keyframe_interval"])])
+    if config["video"].get("deinterlace"):
+        cmd_parts.append("--deinterlace")
+    
+    # Add advanced settings
+    if "advanced_settings" in config:
+        advanced = config["advanced_settings"]
+        if advanced.get("watchdog_enabled"):
+            cmd_parts.append("--watchdog")
+            if advanced.get("watchdog_timeout"):
+                cmd_parts.extend(["--watchdog-timeout", str(advanced["watchdog_timeout"])])
+        if advanced.get("add_clock_overlay"):
+            cmd_parts.append("--add-clock")
+    
+    # Create service file
     service_template = f"""[Unit]
 Description=Binary Transcoder {config['name']}
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/root/ristgateway/basic_transcoder --input-uri {input_address} --output-uri {output_address} --video-codec {video_codec} --video-bitrate {video_bitrate} --audio-codec {audio_codec} --audio-bitrate {audio_bitrate} --stats-port {metrics_port}
+ExecStart={' '.join(cmd_parts)}
 Restart=always
 RestartSec=3
-Environment=GST_DEBUG=3
+Environment=GST_DEBUG=2
 
 [Install]
 WantedBy=multi-user.target
@@ -319,20 +450,13 @@ def get_transcoder_metrics(transcoder_id):
         is_active = result.stdout.strip() == "active"
         
         if not is_active:
-            return {
-                "cpu_usage": 0.0,
-                "memory_usage": 0.0,
-                "output_bitrate": 0,
-                "input_bitrate": 0,
-                "frames_processed": 0,
-                "dropped_frames": 0,
-                "status": "stopped",
-                "uptime": 0,
-                "timestamp": datetime.datetime.now().isoformat()
-            }
+            return TranscoderMetrics(
+                status="stopped",
+                timestamp=datetime.datetime.now().isoformat()
+            ).dict()
         
         # Get metrics from the stats server
-        metrics_port = transcoder.get("metrics_port", 9999)  # Default port if not specified
+        metrics_port = transcoder.get("metrics_port", 9999)
         
         try:
             response = requests.get(f"http://localhost:{metrics_port}/stats", timeout=2)
@@ -344,58 +468,50 @@ def get_transcoder_metrics(transcoder_id):
             # Parse JSON response from the binary transcoder
             metrics_data = response.json()
             
-            # Map the data to our existing format
-            return {
-                "cpu_usage": 0.0,  # Not provided by the transcoder yet
-                "memory_usage": 0.0,  # Not provided by the transcoder yet
-                "input_bitrate": metrics_data.get("input_bitrate_bps", 0) / 1000,  # Convert to kbps
-                "output_bitrate": metrics_data.get("output_bitrate_bps", 0) / 1000,  # Convert to kbps
-                "input_bitrate_mbps": metrics_data.get("input_bitrate_mbps", 0),
-                "output_bitrate_mbps": metrics_data.get("output_bitrate_mbps", 0),
-                "frames_processed": 0,  # Not provided by the transcoder yet
-                "dropped_frames": 0,  # Not provided by the transcoder yet
-                "status": "running" if metrics_data.get("pipeline_state") == "PLAYING" else "error",
-                "uptime": metrics_data.get("uptime_seconds", 0),
-                "timestamp": datetime.datetime.now().isoformat(),
-                "video_codec": metrics_data.get("video_codec", "unknown"),
-                "video_bitrate_kbps": metrics_data.get("video_bitrate_kbps", 0),
-                "audio_codec": metrics_data.get("audio_codec", "unknown"),
-                "audio_bitrate_kbps": metrics_data.get("audio_bitrate_kbps", 0),
-                "packets": {
+            # Map the data to our model
+            return TranscoderMetrics(
+                cpu_usage=metrics_data.get("processing_metrics", {}).get("cpu_usage", 0.0),
+                memory_usage=metrics_data.get("processing_metrics", {}).get("memory_usage_mb", 0.0),
+                input_bitrate=int(metrics_data.get("input_bitrate_bps", 0) / 1000),  # Convert to kbps
+                output_bitrate=int(metrics_data.get("output_bitrate_bps", 0) / 1000),  # Convert to kbps
+                input_bitrate_mbps=metrics_data.get("input_bitrate_mbps", 0.0),
+                output_bitrate_mbps=metrics_data.get("output_bitrate_mbps", 0.0),
+                frames_processed=metrics_data.get("processing_metrics", {}).get("frames_processed", 0),
+                dropped_frames=metrics_data.get("processing_metrics", {}).get("frames_dropped", 0),
+                status="running" if metrics_data.get("pipeline_state") == "PLAYING" else "error",
+                uptime=metrics_data.get("uptime_seconds", 0),
+                timestamp=metrics_data.get("timestamp_unix", datetime.datetime.now().isoformat()),
+                video_codec=metrics_data.get("video_codec", "unknown"),
+                video_bitrate_kbps=metrics_data.get("video_bitrate_kbps", 0),
+                audio_codec=metrics_data.get("audio_codec", "unknown"),
+                audio_bitrate_kbps=metrics_data.get("audio_bitrate_kbps", 0),
+                packets={
                     "input": metrics_data.get("input_packets_total", 0),
                     "output": metrics_data.get("output_packets_total", 0)
-                }
-            }
+                },
+                processing=ProcessingMetrics(**metrics_data.get("processing", {})) if "processing" in metrics_data else None,
+                network=NetworkMetrics(**metrics_data.get("network", {})) if "network" in metrics_data else None,
+                av_sync=metrics_data.get("processing", {}).get("av_sync") if "processing" in metrics_data else None,
+                bitrate_history=metrics_data.get("bitrate_history"),
+                input_video_queue=QueueLevelData(**metrics_data.get("buffer_info", {}).get("video_queue", {})) if metrics_data.get("buffer_info", {}).get("video_queue") else None,
+                input_audio_queue=QueueLevelData(**metrics_data.get("buffer_info", {}).get("audio_queue", {})) if metrics_data.get("buffer_info", {}).get("audio_queue") else None,
+                output_queue=QueueLevelData(**metrics_data.get("buffer_info", {}).get("output_queue", {})) if metrics_data.get("buffer_info", {}).get("output_queue") else None,
+                audio_output_queue=QueueLevelData(**metrics_data.get("buffer_info", {}).get("audio_out_queue", {})) if metrics_data.get("buffer_info", {}).get("audio_out_queue") else None
+            ).dict()
             
         except requests.RequestException as e:
             logger.error(f"Error fetching stats from transcoder: {e}")
-            
-            # Return basic info even if metrics fetch failed
-            return {
-                "cpu_usage": 0.0,
-                "memory_usage": 0.0,
-                "output_bitrate": 0,
-                "input_bitrate": 0,
-                "status": "error",
-                "uptime": 0,
-                "error": str(e),
-                "timestamp": datetime.datetime.now().isoformat()
-            }
+            return TranscoderMetrics(
+                status="error",
+                timestamp=datetime.datetime.now().isoformat()
+            ).dict()
             
     except Exception as e:
         logger.error(f"Error getting transcoder metrics: {e}")
-        return {
-            "cpu_usage": 0.0,
-            "memory_usage": 0.0,
-            "output_bitrate": 0,
-            "input_bitrate": 0,
-            "frames_processed": 0,
-            "dropped_frames": 0,
-            "status": "error",
-            "uptime": 0,
-            "error": str(e),
-            "timestamp": datetime.datetime.now().isoformat()
-        }
+        return TranscoderMetrics(
+            status="error",
+            timestamp=datetime.datetime.now().isoformat()
+        ).dict()
 
 # Endpoints
 @router.get("/available-devices")
@@ -654,6 +770,50 @@ def get_metrics(transcoder_id: str):
     """Get metrics for a transcoder"""
     metrics = get_transcoder_metrics(transcoder_id)
     return metrics
+
+@router.get("/{transcoder_id}/buffers")
+def get_buffer_stats(transcoder_id: str):
+    """Get buffer statistics for a transcoder"""
+    config = load_config(TRANSCODER_CONFIG_FILE)
+    if transcoder_id not in config.get("transcoders", {}):
+        raise HTTPException(status_code=404, detail="Transcoder not found")
+    
+    transcoder = config["transcoders"][transcoder_id]
+    metrics_port = transcoder.get("metrics_port", 9999)
+    
+    try:
+        response = requests.get(f"http://localhost:{metrics_port}/buffers", timeout=2)
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to fetch buffer stats")
+        
+        return response.json()
+        
+    except requests.RequestException as e:
+        logger.error(f"Error fetching buffer stats: {e}")
+        raise HTTPException(status_code=502, detail="Failed to connect to transcoder stats server")
+
+@router.get("/{transcoder_id}/metrics/processing")
+def get_processing_metrics(transcoder_id: str):
+    """Get processing metrics for a transcoder"""
+    config = load_config(TRANSCODER_CONFIG_FILE)
+    if transcoder_id not in config.get("transcoders", {}):
+        raise HTTPException(status_code=404, detail="Transcoder not found")
+    
+    transcoder = config["transcoders"][transcoder_id]
+    metrics_port = transcoder.get("metrics_port", 9999)
+    
+    try:
+        response = requests.get(f"http://localhost:{metrics_port}/metrics", timeout=2)
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to fetch processing metrics")
+        
+        return response.json()
+        
+    except requests.RequestException as e:
+        logger.error(f"Error fetching processing metrics: {e}")
+        raise HTTPException(status_code=502, detail="Failed to connect to transcoder stats server")
 
 @router.get("/gstreamer/plugins")
 def get_gstreamer_plugins():
