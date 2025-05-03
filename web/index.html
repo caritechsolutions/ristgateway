@@ -146,8 +146,9 @@
     </div>
 
 <!-- Add this new modal div at the same level as your existing channelModal -->
+<!-- Updated Transcoder Modal with Enhanced Options -->
 <div id="transcoderModal" class="fixed inset-0 hidden bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-screen overflow-y-auto">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-screen overflow-y-auto">
         <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
                 <h2 id="transcoderModalTitle" class="text-xl font-bold text-gray-800">Add New Transcoder</h2>
@@ -163,38 +164,91 @@
             <form id="transcoderForm" class="space-y-6">
                 <input type="hidden" id="transcoderId" value="">
                 
+                <!-- Basic Information -->
+                <div class="bg-gray-50 p-4 rounded-md">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                        Basic Information
+                        <span class="ml-2 text-xs text-red-500">* Required fields</span>
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="block text-sm font-medium text-gray-700">Transcoder Name <span class="text-red-500">*</span></label>
+                            <input type="text" id="transcoderName" required
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Input Section -->
                 <div class="bg-gray-50 p-4 rounded-md">
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Input Configuration</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700">Transcoder Name</label>
-                            <input type="text" id="transcoderName" required
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        </div>
-                        
-                        <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700">Input Address (UDP)</label>
+                            <label class="block text-sm font-medium text-gray-700">Input Address (UDP) <span class="text-red-500">*</span></label>
                             <input type="text" id="inputAddress" required placeholder="udp://127.0.0.1:10000"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Source UDP stream address</p>
                         </div>
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Program PID</label>
-                            <input type="number" id="programPid" min="0" max="8191"
+                            <input type="number" id="programPid" min="-1" max="8191" placeholder="-1"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Use -1 for auto-detect</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Video PID <span class="text-red-500">*</span></label>
+                            <input type="number" id="videoPid" min="1" max="8191" required
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Video PID</label>
-                            <input type="number" id="videoPid" min="0" max="8191"
+                            <label class="block text-sm font-medium text-gray-700">Audio PID <span class="text-red-500">*</span></label>
+                            <input type="number" id="audioPid" min="1" max="8191" required
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Buffer Settings -->
+                <div class="bg-gray-50 p-4 rounded-md">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Buffer Settings</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Buffer Mode</label>
+                            <select id="bufferMode" 
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="0">Default</option>
+                                <option value="1">Low Latency</option>
+                                <option value="2">High Quality</option>
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">Determines overall buffering strategy</p>
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Audio PID</label>
-                            <input type="number" id="audioPid" min="0" max="8191"
+                            <label class="block text-sm font-medium text-gray-700">Leaky Mode</label>
+                            <select id="leakyMode" 
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="0">None (Block when full)</option>
+                                <option value="1">Upstream (Drop oldest)</option>
+                                <option value="2">Downstream (Drop newest)</option>
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">How buffers behave when full</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Buffer Size (MB)</label>
+                            <input type="number" id="bufferSize" min="1" value="4"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Memory allocation for buffers</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Buffer Time (ms)</label>
+                            <input type="number" id="bufferTime" min="1" value="500"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Max duration to buffer</p>
                         </div>
                     </div>
                 </div>
@@ -213,8 +267,8 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Video Codec</label>
-                            <select id="videoCodec" 
+                            <label class="block text-sm font-medium text-gray-700">Video Codec <span class="text-red-500">*</span></label>
+                            <select id="videoCodec" required
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="h264">H.264</option>
                                 <option value="h265">H.265</option>
@@ -246,6 +300,7 @@
                                 <option value="3">3</option>
                                 <option value="4">4</option>
                             </select>
+                            <p class="mt-1 text-xs text-gray-500">More B-frames = better quality but higher latency</p>
                         </div>
                         
                         <div>
@@ -262,17 +317,29 @@
                             <label class="block text-sm font-medium text-gray-700">Preset</label>
                             <select id="videoPreset" 
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="fast">Fast</option>
-                                <option value="ultrafast">Ultra Fast</option>
-                                <option value="veryfast">Very Fast</option>
                                 <option value="medium">Medium</option>
+                                <option value="ultrafast">Ultra Fast</option>
+                                <option value="superfast">Super Fast</option>
+                                <option value="veryfast">Very Fast</option>
+                                <option value="faster">Faster</option>
+                                <option value="fast">Fast</option>
                                 <option value="slow">Slow</option>
+                                <option value="slower">Slower</option>
+                                <option value="veryslow">Very Slow</option>
                             </select>
+                            <p class="mt-1 text-xs text-gray-500">Faster preset = lower latency but lower quality</p>
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Video Bitrate (kbps)</label>
-                            <input type="number" id="videoBitrate" min="100" value="2000"
+                            <label class="block text-sm font-medium text-gray-700">Keyframe Interval (frames)</label>
+                            <input type="number" id="keyframeInterval" min="1" value="60"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Lower values = better seeking, higher bandwidth</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Video Bitrate (kbps) <span class="text-red-500">*</span></label>
+                            <input type="number" id="videoBitrate" min="100" value="2000" required
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
                         
@@ -288,8 +355,8 @@
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Audio Configuration</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Audio Codec</label>
-                            <select id="audioCodec" 
+                            <label class="block text-sm font-medium text-gray-700">Audio Codec <span class="text-red-500">*</span></label>
+                            <select id="audioCodec" required
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="aac">AAC</option>
                                 <option value="mp2">MP2</option>
@@ -303,7 +370,7 @@
                             <label class="block text-sm font-medium text-gray-700">Sample Rate (Hz)</label>
                             <select id="sampleRate" 
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="bypass">Bypass</option>
+                                <option value="bypass">Same as input</option>
                                 <option value="8000">8000</option>
                                 <option value="16000">16000</option>
                                 <option value="24000">24000</option>
@@ -317,7 +384,7 @@
                             <label class="block text-sm font-medium text-gray-700">Audio Channels</label>
                             <select id="audioChannels" 
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="bypass">Bypass</option>
+                                <option value="bypass">Same as input</option>
                                 <option value="1">1 (Mono)</option>
                                 <option value="2">2 (Stereo)</option>
                                 <option value="3">3</option>
@@ -330,8 +397,8 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Audio Bitrate (kbps)</label>
-                            <input type="number" id="audioBitrate" min="32" value="128"
+                            <label class="block text-sm font-medium text-gray-700">Audio Bitrate (kbps) <span class="text-red-500">*</span></label>
+                            <input type="number" id="audioBitrate" min="32" value="128" required
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
                     </div>
@@ -342,7 +409,7 @@
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Output Configuration</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-gray-700">Output Address (UDP)</label>
+                            <label class="block text-sm font-medium text-gray-700">Output Address (UDP) <span class="text-red-500">*</span></label>
                             <input type="text" id="outputAddress" required placeholder="udp://127.0.0.1:10001"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
@@ -351,27 +418,67 @@
                             <label class="block text-sm font-medium text-gray-700">Output Program PID</label>
                             <input type="number" id="outputProgramPid" min="0" max="8191"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <p class="mt-1 text-xs text-gray-500">Leave blank to bypass</p>
+                            <p class="mt-1 text-xs text-gray-500">Leave blank to keep original</p>
                         </div>
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Output Video PID</label>
                             <input type="number" id="outputVideoPid" min="0" max="8191"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <p class="mt-1 text-xs text-gray-500">Leave blank to bypass</p>
+                            <p class="mt-1 text-xs text-gray-500">Leave blank to keep original</p>
                         </div>
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Output Audio PID</label>
                             <input type="number" id="outputAudioPid" min="0" max="8191"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <p class="mt-1 text-xs text-gray-500">Leave blank to bypass</p>
+                            <p class="mt-1 text-xs text-gray-500">Leave blank to keep original</p>
                         </div>
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Mux Bitrate (kbps)</label>
                             <input type="number" id="muxBitrate" min="0"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Leave blank for automatic</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Advanced Options -->
+                <div class="bg-gray-50 p-4 rounded-md">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Advanced Options</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="watchdogEnabled" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                            <label for="watchdogEnabled" class="ml-2 block text-sm text-gray-700">Enable Watchdog</label>
+                            <div class="ml-2 group relative">
+                                <svg class="h-5 w-5 text-gray-400 cursor-help" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                                </svg>
+                                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 p-2 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                    Watchdog will automatically restart the transcoder if it stops responding
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Watchdog Timeout (sec)</label>
+                            <input type="number" id="watchdogTimeout" min="5" value="10"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Time without activity before restart</p>
+                        </div>
+                        
+                        <div class="flex items-center">
+                            <input type="checkbox" id="addClockOverlay" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                            <label for="addClockOverlay" class="ml-2 block text-sm text-gray-700">Add Clock Overlay</label>
+                            <div class="ml-2 group relative">
+                                <svg class="h-5 w-5 text-gray-400 cursor-help" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                                </svg>
+                                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 p-2 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                    Display timestamp on video for debugging
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1385,7 +1492,7 @@ function initTranscoderEvents() {
     // Toggle form fields based on codec selection
     document.getElementById('videoCodec').addEventListener('change', function(e) {
         const isCopy = e.target.value === 'copy';
-        const videoFields = ['videoResolution', 'bFrames', 'videoProfile', 'videoPreset', 'videoBitrate', 'deinterlace'];
+        const videoFields = ['videoResolution', 'bFrames', 'videoProfile', 'videoPreset', 'videoBitrate', 'deinterlace', 'keyframeInterval'];
         videoFields.forEach(id => {
             const element = document.getElementById(id);
             element.disabled = isCopy;
@@ -1402,13 +1509,33 @@ function initTranscoderEvents() {
             element.parentElement.classList.toggle('opacity-50', isCopy);
         });
     });
+    
+    // Handle watchdog enable/disable
+    document.getElementById('watchdogEnabled').addEventListener('change', function(e) {
+        const watchdogTimeout = document.getElementById('watchdogTimeout');
+        watchdogTimeout.disabled = !e.target.checked;
+        watchdogTimeout.parentElement.classList.toggle('opacity-50', !e.target.checked);
+    });
 }
+
 
 async function openTranscoderModal() {
     // Reset form
     document.getElementById('transcoderForm').reset();
     document.getElementById('transcoderId').value = '';
     document.getElementById('transcoderModalTitle').textContent = 'Add New Transcoder';
+    
+    // Set default values
+    document.getElementById('bufferMode').value = '0';
+    document.getElementById('leakyMode').value = '0';
+    document.getElementById('bufferSize').value = '4';
+    document.getElementById('bufferTime').value = '500';
+    document.getElementById('videoPreset').value = 'medium';
+    document.getElementById('videoProfile').value = 'high';
+    document.getElementById('bFrames').value = '0';
+    document.getElementById('keyframeInterval').value = '60';
+    document.getElementById('watchdogTimeout').value = '10';
+    document.getElementById('programPid').value = '-1';
     
     // Load available devices
     try {
@@ -1451,7 +1578,9 @@ async function openTranscoderModal() {
     // Ensure fields are enabled/disabled properly
     document.getElementById('videoCodec').dispatchEvent(new Event('change'));
     document.getElementById('audioCodec').dispatchEvent(new Event('change'));
+    document.getElementById('watchdogEnabled').dispatchEvent(new Event('change'));
 }
+
 
 function closeTranscoderModal() {
     document.getElementById('transcoderModal').classList.add('hidden');
@@ -1459,62 +1588,7 @@ function closeTranscoderModal() {
 
 
 
-async function openEditTranscoderModal(transcoderId) {
-    try {
-        // Load available devices first
-        await openTranscoderModal();
-        
-        // Get the transcoder data
-        const transcoder = await transcoderClient.getTranscoder(transcoderId);
-        
-        // Set the form title and ID
-        document.getElementById('transcoderModalTitle').textContent = 'Edit Transcoder';
-        document.getElementById('transcoderId').value = transcoderId;
-        
-        // Fill the form with transcoder data
-        document.getElementById('transcoderName').value = transcoder.name;
-        document.getElementById('inputAddress').value = transcoder.input.address;
-        document.getElementById('programPid').value = transcoder.input.program_pid || '';
-        document.getElementById('videoPid').value = transcoder.input.video_pid || '';
-        document.getElementById('audioPid').value = transcoder.input.audio_pid || '';
-        
-        document.getElementById('videoDevice').value = transcoder.video.device;
-        document.getElementById('videoCodec').value = transcoder.video.codec;
-        document.getElementById('videoResolution').value = transcoder.video.resolution;
-        document.getElementById('bFrames').value = transcoder.video.b_frames;
-        document.getElementById('videoProfile').value = transcoder.video.profile;
-        document.getElementById('videoPreset').value = transcoder.video.preset;
-        document.getElementById('deinterlace').checked = transcoder.video.deinterlace;
-        document.getElementById('videoBitrate').value = transcoder.video.bitrate;
-        
-        document.getElementById('audioCodec').value = transcoder.audio.codec;
-        document.getElementById('sampleRate').value = transcoder.audio.sample_rate;
-        document.getElementById('audioChannels').value = transcoder.audio.channels;
-        document.getElementById('audioBitrate').value = transcoder.audio.bitrate;
-        
-        document.getElementById('outputAddress').value = transcoder.output.address;
-        document.getElementById('outputProgramPid').value = transcoder.output.program_pid || '';
-        document.getElementById('outputVideoPid').value = transcoder.output.video_pid || '';
-        document.getElementById('outputAudioPid').value = transcoder.output.audio_pid || '';
-        document.getElementById('muxBitrate').value = transcoder.output.mux_bitrate || '';
-        
-        // Save the metrics port
-        document.getElementById('metricsPort').value = transcoder.metrics_port || '';
-        
-        // Trigger codec change events to handle disabled fields
-        document.getElementById('videoCodec').dispatchEvent(new Event('change'));
-        document.getElementById('audioCodec').dispatchEvent(new Event('change'));
-    } catch (error) {
-        console.error('Error loading transcoder for editing:', error);
-        alert(`Error loading transcoder: ${error.message}`);
-        closeTranscoderModal();
-    }
-}
 
-
-
-// Create a global instance of the client
-const transcoderClient = new TranscoderClient();
 
 async function openEditTranscoderModal(transcoderId) {
     try {
@@ -1531,10 +1605,11 @@ async function openEditTranscoderModal(transcoderId) {
         // Fill the form with transcoder data
         document.getElementById('transcoderName').value = transcoder.name;
         document.getElementById('inputAddress').value = transcoder.input.address;
-        document.getElementById('programPid').value = transcoder.input.program_pid || '';
+        document.getElementById('programPid').value = transcoder.input.program_pid ?? -1;
         document.getElementById('videoPid').value = transcoder.input.video_pid || '';
         document.getElementById('audioPid').value = transcoder.input.audio_pid || '';
         
+        // Video settings
         document.getElementById('videoDevice').value = transcoder.video.device;
         document.getElementById('videoCodec').value = transcoder.video.codec;
         document.getElementById('videoResolution').value = transcoder.video.resolution;
@@ -1543,30 +1618,50 @@ async function openEditTranscoderModal(transcoderId) {
         document.getElementById('videoPreset').value = transcoder.video.preset;
         document.getElementById('deinterlace').checked = transcoder.video.deinterlace;
         document.getElementById('videoBitrate').value = transcoder.video.bitrate;
+        document.getElementById('keyframeInterval').value = transcoder.video.keyframe_interval || 60;
         
+        // Audio settings
         document.getElementById('audioCodec').value = transcoder.audio.codec;
         document.getElementById('sampleRate').value = transcoder.audio.sample_rate;
         document.getElementById('audioChannels').value = transcoder.audio.channels;
         document.getElementById('audioBitrate').value = transcoder.audio.bitrate;
         
+        // Output settings
         document.getElementById('outputAddress').value = transcoder.output.address;
         document.getElementById('outputProgramPid').value = transcoder.output.program_pid || '';
         document.getElementById('outputVideoPid').value = transcoder.output.video_pid || '';
         document.getElementById('outputAudioPid').value = transcoder.output.audio_pid || '';
         document.getElementById('muxBitrate').value = transcoder.output.mux_bitrate || '';
         
+        // Buffer settings
+        if (transcoder.buffer_settings) {
+            document.getElementById('bufferMode').value = transcoder.buffer_settings.buffer_mode || 0;
+            document.getElementById('leakyMode').value = transcoder.buffer_settings.leaky_mode || 0;
+            document.getElementById('bufferSize').value = transcoder.buffer_settings.buffer_size_mb || 4;
+            document.getElementById('bufferTime').value = transcoder.buffer_settings.buffer_time_ms || 500;
+        }
+        
+        // Advanced settings
+        if (transcoder.advanced_settings) {
+            document.getElementById('watchdogEnabled').checked = transcoder.advanced_settings.watchdog_enabled || false;
+            document.getElementById('watchdogTimeout').value = transcoder.advanced_settings.watchdog_timeout || 10;
+            document.getElementById('addClockOverlay').checked = transcoder.advanced_settings.add_clock_overlay || false;
+        }
+        
         // Save the metrics port
         document.getElementById('metricsPort').value = transcoder.metrics_port || '';
         
-        // Trigger codec change events to handle disabled fields
+        // Trigger events to handle disabled fields
         document.getElementById('videoCodec').dispatchEvent(new Event('change'));
         document.getElementById('audioCodec').dispatchEvent(new Event('change'));
+        document.getElementById('watchdogEnabled').dispatchEvent(new Event('change'));
     } catch (error) {
         console.error('Error loading transcoder for editing:', error);
         alert(`Error loading transcoder: ${error.message}`);
         closeTranscoderModal();
     }
 }
+
 
 async function handleSaveTranscoder(e) {
     e.preventDefault();
@@ -1590,6 +1685,7 @@ async function handleSaveTranscoder(e) {
         videoPreset: document.getElementById('videoPreset').value,
         deinterlace: document.getElementById('deinterlace').checked,
         videoBitrate: document.getElementById('videoBitrate').value,
+        keyframeInterval: document.getElementById('keyframeInterval').value,
         audioCodec: document.getElementById('audioCodec').value,
         sampleRate: document.getElementById('sampleRate').value,
         audioChannels: document.getElementById('audioChannels').value,
@@ -1599,6 +1695,13 @@ async function handleSaveTranscoder(e) {
         outputVideoPid: document.getElementById('outputVideoPid').value,
         outputAudioPid: document.getElementById('outputAudioPid').value,
         muxBitrate: document.getElementById('muxBitrate').value,
+        bufferMode: document.getElementById('bufferMode').value,
+        leakyMode: document.getElementById('leakyMode').value,
+        bufferSize: document.getElementById('bufferSize').value,
+        bufferTime: document.getElementById('bufferTime').value,
+        watchdogEnabled: document.getElementById('watchdogEnabled').checked,
+        watchdogTimeout: document.getElementById('watchdogTimeout').value,
+        addClockOverlay: document.getElementById('addClockOverlay').checked,
         metricsPort: document.getElementById('metricsPort').value
     };
     
@@ -1647,11 +1750,13 @@ async function handleSaveTranscoder(e) {
 // Add a global reference to the window to make it accessible from HTML
 window.openEditTranscoderModal = openEditTranscoderModal;
 
+// Create a global instance of the client
+const transcoderClient = new TranscoderClient();
+
 // Initialize transcoder events when document is loaded
 document.addEventListener('DOMContentLoaded', () => {
     initTranscoderEvents();
 });
-
 
 
 
