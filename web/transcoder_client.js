@@ -1,7 +1,8 @@
 /**
- * Transcoder API Client
+ * Enhanced Transcoder API Client
  * 
- * This module provides functions to interact with the transcoder API endpoints
+ * This module provides functions to interact with the updated transcoder API endpoints
+ * with support for the new transcoder parameters
  */
 
 class TranscoderClient {
@@ -10,7 +11,6 @@ class TranscoderClient {
         this.TRANSCODERS_BASE = `${this.API_BASE}/transcoders`;
     }
 
-    // Add this to your TranscoderClient class
     async handleToggleTranscoder(transcoderId) {
         try {
             // Get transcoder info
@@ -301,6 +301,24 @@ class TranscoderClient {
     }
 
     /**
+     * Get buffer stats for a transcoder
+     * @param {string} transcoderId - The ID of the transcoder
+     * @returns {Promise<Object>} - Transcoder buffer statistics
+     */
+    async getTranscoderBuffers(transcoderId) {
+        try {
+            const response = await fetch(`${this.TRANSCODERS_BASE}/${transcoderId}/buffers`);
+            if (!response.ok) {
+                throw new Error(`Failed to get buffer stats: ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error(`Error fetching buffer stats for transcoder ${transcoderId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
      * Get information for the next transcoder ID
      * @returns {Promise<Object>} - Next transcoder ID info with metrics port
      */
@@ -375,7 +393,8 @@ class TranscoderClient {
                 profile: formData.videoProfile,
                 preset: formData.videoPreset,
                 deinterlace: formData.deinterlace,
-                bitrate: parseInt(formData.videoBitrate || 0)
+                bitrate: parseInt(formData.videoBitrate || 0),
+                keyframe_interval: parseInt(formData.keyframeInterval || 60)
             },
             audio: {
                 codec: formData.audioCodec,
@@ -390,6 +409,17 @@ class TranscoderClient {
                 audio_pid: formData.outputAudioPid ? parseInt(formData.outputAudioPid) : null,
                 mux_bitrate: formData.muxBitrate ? parseInt(formData.muxBitrate) : null
             },
+            buffer_settings: {
+                buffer_mode: parseInt(formData.bufferMode || 0),
+                leaky_mode: parseInt(formData.leakyMode || 0),
+                buffer_size_mb: parseInt(formData.bufferSize || 4),
+                buffer_time_ms: parseInt(formData.bufferTime || 500)
+            },
+            advanced_settings: {
+                watchdog_enabled: formData.watchdogEnabled || false,
+                watchdog_timeout: parseInt(formData.watchdogTimeout || 10),
+                add_clock_overlay: formData.addClockOverlay || false
+            },
             metrics_port: formData.metricsPort ? parseInt(formData.metricsPort) : null,
             enabled: true,
             status: "stopped"
@@ -398,9 +428,6 @@ class TranscoderClient {
 }
 
 // Export as a global or module
-// In a proper module system, you would use:
-// export default TranscoderClient;
-// But for simplicity in this example, we're attaching to window
 if (typeof window !== 'undefined') {
     window.TranscoderClient = TranscoderClient;
 }
