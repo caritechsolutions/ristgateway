@@ -64,11 +64,11 @@
                 <div class="grid grid-cols-2 gap-4 mb-4">
                     <div class="p-4 bg-gray-50 rounded">
                         <p class="text-sm text-gray-600">Input Format</p>
-                        <p id="input_format" class="text-xl font-bold">-</p>
+                        <p id="input_format" class="text-sm font-bold leading-relaxed">-</p>
                     </div>
                     <div class="p-4 bg-gray-50 rounded">
                         <p class="text-sm text-gray-600">Output Format</p>
-                        <p id="output_format" class="text-xl font-bold">-</p>
+                        <p id="output_format" class="text-sm font-bold leading-relaxed">-</p>
                     </div>
                 </div>
                 
@@ -380,95 +380,110 @@
             document.getElementById('input_bitrate').textContent = formatBitrate(metrics.input_bitrate_mbps * 1000);
             document.getElementById('output_bitrate').textContent = formatBitrate(metrics.output_bitrate_mbps * 1000);
             
-            // Update codec info
+            // Update codec info - show both video and audio
             if (metrics.processing && metrics.processing.stream_info) {
-                document.getElementById('input_format').textContent = metrics.processing.stream_info.video_codec || 'Unknown';
+                const streamInfo = metrics.processing.stream_info;
+                document.getElementById('input_format').textContent = 
+                    `Video: ${streamInfo.video_codec || 'Unknown'}\nAudio: ${streamInfo.audio_codec || 'Unknown'}`;
+            } else {
+                document.getElementById('input_format').textContent = 'Unknown';
             }
-            document.getElementById('output_format').textContent = metrics.video_codec || 'Unknown';
             
-            // Update stream info
+            // Output format - show both video and audio codecs
+            document.getElementById('output_format').textContent = 
+                `Video: ${metrics.video_codec || 'Unknown'}\nAudio: ${metrics.audio_codec || 'Unknown'}`;
+            
+            // Update stream info - check correct paths
             if (metrics.processing && metrics.processing.stream_info) {
                 const streamInfo = metrics.processing.stream_info;
                 document.getElementById('video_pid').textContent = streamInfo.video_pid || '-';
                 document.getElementById('audio_pid').textContent = streamInfo.audio_pid || '-';
+            } else if (metrics.stream_info) {
+                // Fallback to root level
+                const streamInfo = metrics.stream_info;
+                document.getElementById('video_pid').textContent = streamInfo.video_pid || '-';
+                document.getElementById('audio_pid').textContent = streamInfo.audio_pid || '-';
             }
             
-            // Update resolution and framerate from processing.stream_info
-            if (metrics.processing && metrics.processing.stream_info) {
-                const streamInfo = metrics.processing.stream_info;
+            // Update resolution and framerate from input_info
+            if (metrics.input_info) {
+                const inputInfo = metrics.input_info;
                 
-                // Check for resolution in stream_info
-                if (streamInfo.resolution) {
-                    document.getElementById('resolution').textContent = streamInfo.resolution;
+                if (inputInfo.resolution) {
+                    document.getElementById('resolution').textContent = inputInfo.resolution;
                 } else {
                     document.getElementById('resolution').textContent = 'Unknown';
                 }
                 
-                // Check for framerate in stream_info
-                if (streamInfo.framerate) {
-                    document.getElementById('framerate').textContent = `${streamInfo.framerate.toFixed(2)} fps`;
+                if (inputInfo.framerate) {
+                    document.getElementById('framerate').textContent = `${inputInfo.framerate.toFixed(2)} fps`;
                 } else {
                     document.getElementById('framerate').textContent = 'Unknown';
                 }
             }
             
             // Update performance metrics
-            if (metrics.processing) {
-                const cpuUsage = metrics.processing.cpu_usage_percent;
+            if (metrics.processing_metrics) {
+                const procMetrics = metrics.processing_metrics;
+                const cpuUsage = procMetrics.cpu_usage || 0;
                 document.getElementById('cpu_usage').textContent = `${cpuUsage.toFixed(1)}%`;
                 updateProgressBar('cpu_bar', cpuUsage, 100);
                 
-                const memoryUsage = metrics.processing.memory_usage_mb || (metrics.processing.memory_usage_bytes / 1024 / 1024);
+                const memoryUsage = procMetrics.memory_usage_mb || 0;
                 document.getElementById('memory_usage').textContent = `${memoryUsage.toFixed(1)} MB`;
-                updateProgressBar('memory_bar', memoryUsage, 1000); // Assuming 1GB is maximum
+                updateProgressBar('memory_bar', memoryUsage, 1000);
                 
                 document.getElementById('encoding_fps').textContent = 
-                    `${metrics.processing.video_encoding_fps.toFixed(1)} fps`;
-            }
-            
-            // Update AV sync info
-            if (metrics.processing && metrics.processing.av_sync) {
-                const avSync = metrics.processing.av_sync;
-                document.getElementById('av_drift').textContent = formatMs(avSync.current_drift_ms);
-                document.getElementById('av_max_drift').textContent = formatMs(avSync.max_drift_ms);
-            }
-            
-            // Update frame statistics
-            if (metrics.processing) {
+                    `${(procMetrics.encoding_fps || 0).toFixed(1)} fps`;
+                    
+                // Update AV sync info
+                if (procMetrics.av_sync) {
+                    const avSync = procMetrics.av_sync;
+                    document.getElementById('av_drift').textContent = formatMs(avSync.current_drift_ms || 0);
+                    document.getElementById('av_max_drift').textContent = formatMs(avSync.max_drift_ms || 0);
+                } else {
+                    // Fallback to root level drift values
+                    document.getElementById('av_drift').textContent = formatMs(procMetrics.audio_video_drift_ms || 0);
+                    document.getElementById('av_max_drift').textContent = formatMs(procMetrics.max_drift_ms || 0);
+                }
+                
+                // Update frame statistics
                 document.getElementById('frames_processed').textContent = 
-                    metrics.processing.frames_processed.toLocaleString();
+                    (procMetrics.frames_processed || 0).toLocaleString();
                 document.getElementById('frames_dropped').textContent = 
-                    metrics.processing.frames_dropped.toLocaleString();
+                    (procMetrics.frames_dropped || 0).toLocaleString();
                 document.getElementById('frames_delayed').textContent = 
-                    metrics.processing.frames_delayed.toLocaleString();
+                    (procMetrics.frames_delayed || 0).toLocaleString();
                 
                 document.getElementById('pts_discontinuity').textContent = 
-                    metrics.processing.pts_discontinuity ? 'Yes' : 'No';
+                    procMetrics.pts_discontinuity ? 'Yes' : 'No';
                 document.getElementById('timestamp_gap').textContent = 
-                    formatMs(metrics.processing.timestamp_gap_ms || 0);
+                    formatMs(procMetrics.timestamp_gap_ms || (procMetrics.timestamp_gap_ns ? procMetrics.timestamp_gap_ns / 1000000 : 0));
                 
-                if (metrics.processing.pts_discontinuity) {
+                if (procMetrics.pts_discontinuity) {
                     document.getElementById('timestamp_status').className = 'p-2 rounded bg-yellow-100';
                 } else {
                     document.getElementById('timestamp_status').className = 'p-2 rounded bg-green-100';
                 }
             }
             
-            // Update packet statistics
+            // Update packet statistics using correct field names
+            document.getElementById('input_packets').textContent = 
+                (metrics.input_packets_total || 0).toLocaleString();
+            document.getElementById('output_packets').textContent = 
+                (metrics.output_packets_total || 0).toLocaleString();
+                
+            // Check network metrics
             if (metrics.network) {
-                document.getElementById('input_packets').textContent = 
-                    metrics.network.input_packets.toLocaleString();
-                document.getElementById('output_packets').textContent = 
-                    metrics.network.output_packets.toLocaleString();
                 document.getElementById('input_jitter').textContent = 
-                    formatMs(metrics.network.input_jitter_ms);
+                    formatMs(metrics.network.input_jitter_ms || 0);
                 document.getElementById('output_jitter').textContent = 
-                    formatMs(metrics.network.output_jitter_ms);
+                    formatMs(metrics.network.output_jitter_ms || 0);
                 
                 document.getElementById('network_stable').textContent = 
                     metrics.network.network_stable ? 'Stable' : 'Unstable';
                 document.getElementById('avg_packet_size').textContent = 
-                    `${metrics.network.avg_packet_size_bytes.toFixed(0)} bytes`;
+                    `${(metrics.network.avg_packet_size_bytes || 0).toFixed(0)} bytes`;
                 
                 if (metrics.network.network_stable) {
                     document.getElementById('network_status').className = 'p-2 rounded bg-green-100';
@@ -477,29 +492,33 @@
                 }
             }
             
-            // Update queue levels
-            if (metrics.input_video_queue) {
-                const vq = metrics.input_video_queue;
-                document.getElementById('video_input_percent').textContent = `${vq.percent_full.toFixed(1)}%`;
-                updateProgressBar('video_input_bar', vq.percent_full);
-            }
-            
-            if (metrics.input_audio_queue) {
-                const aq = metrics.input_audio_queue;
-                document.getElementById('audio_input_percent').textContent = `${aq.percent_full.toFixed(1)}%`;
-                updateProgressBar('audio_input_bar', aq.percent_full);
-            }
-            
-            if (metrics.output_queue) {
-                const voq = metrics.output_queue;
-                document.getElementById('video_output_percent').textContent = `${voq.percent_full.toFixed(1)}%`;
-                updateProgressBar('video_output_bar', voq.percent_full);
-            }
-            
-            if (metrics.audio_output_queue) {
-                const aoq = metrics.audio_output_queue;
-                document.getElementById('audio_output_percent').textContent = `${aoq.percent_full.toFixed(1)}%`;
-                updateProgressBar('audio_output_bar', aoq.percent_full);
+            // Update queue levels from buffer_info
+            if (metrics.buffer_info) {
+                const bufferInfo = metrics.buffer_info;
+                
+                if (bufferInfo.video_queue) {
+                    const vq = bufferInfo.video_queue;
+                    document.getElementById('video_input_percent').textContent = `${vq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('video_input_bar', vq.percent_full);
+                }
+                
+                if (bufferInfo.audio_queue) {
+                    const aq = bufferInfo.audio_queue;
+                    document.getElementById('audio_input_percent').textContent = `${aq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('audio_input_bar', aq.percent_full);
+                }
+                
+                if (bufferInfo.output_queue) {
+                    const voq = bufferInfo.output_queue;
+                    document.getElementById('video_output_percent').textContent = `${voq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('video_output_bar', voq.percent_full);
+                }
+                
+                if (bufferInfo.audio_out_queue) {
+                    const aoq = bufferInfo.audio_out_queue;
+                    document.getElementById('audio_output_percent').textContent = `${aoq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('audio_output_bar', aoq.percent_full);
+                }
             }
             
             // Fetch buffer stats to update underflow/overflow counters
