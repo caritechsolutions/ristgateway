@@ -14,6 +14,25 @@
             height: 240px;
             position: relative;
         }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.375rem 0.75rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+        .progress-bar {
+            height: 8px;
+            border-radius: 4px;
+            background-color: #e5e7eb;
+            overflow: hidden;
+        }
+        .progress-value {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -21,16 +40,16 @@
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-3xl font-bold" id="transcoderTitle">Transcoder Statistics</h1>
             <div class="space-x-4">
-                <span id="statusBadge" class="px-3 py-1 rounded-full text-sm font-semibold"></span>
+                <span id="statusBadge" class="status-badge bg-gray-100 text-gray-800">Initializing...</span>
                 <a href="/" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Back</a>
             </div>
         </div>
 
+        <!-- Overview Card -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <!-- Input/Output Stats -->
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <h2 class="text-xl font-semibold mb-4">Transcoder Overview</h2>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-2 gap-4 mb-4">
                     <div class="p-4 bg-gray-50 rounded">
                         <p class="text-sm text-gray-600">Status</p>
                         <p id="status" class="text-2xl font-bold p-1 rounded">-</p>
@@ -39,13 +58,37 @@
                         <p class="text-sm text-gray-600">Uptime</p>
                         <p id="uptime" class="text-2xl font-bold">-</p>
                     </div>
+                </div>
+                
+                <h3 class="text-lg font-semibold mb-2">Codec Configuration</h3>
+                <div class="grid grid-cols-2 gap-4 mb-4">
                     <div class="p-4 bg-gray-50 rounded">
                         <p class="text-sm text-gray-600">Input Format</p>
-                        <p id="input_format" class="text-2xl font-bold">-</p>
+                        <p id="input_format" class="text-xl font-bold">-</p>
                     </div>
                     <div class="p-4 bg-gray-50 rounded">
                         <p class="text-sm text-gray-600">Output Format</p>
-                        <p id="output_format" class="text-2xl font-bold">-</p>
+                        <p id="output_format" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
+                
+                <h3 class="text-lg font-semibold mb-2">Stream Information</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Video PID</p>
+                        <p id="video_pid" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Audio PID</p>
+                        <p id="audio_pid" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Resolution</p>
+                        <p id="resolution" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Framerate</p>
+                        <p id="framerate" class="text-xl font-bold">-</p>
                     </div>
                 </div>
             </div>
@@ -56,40 +99,194 @@
                 <div class="chart-container">
                     <canvas id="bitrateChart"></canvas>
                 </div>
+                <div class="grid grid-cols-2 gap-4 mt-4">
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Input Bitrate</p>
+                        <p id="input_bitrate" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Output Bitrate</p>
+                        <p id="output_bitrate" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Input Stats -->
+        <!-- A/V Sync, Performance, Buffering -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <!-- A/V Sync -->
             <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-xl font-semibold mb-4">Input Statistics</h2>
-                <div class="space-y-4">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="p-4 bg-gray-50 rounded">
-                            <p class="text-sm text-gray-600">Current Bitrate</p>
-                            <p id="input_bitrate" class="text-xl font-bold">-</p>
+                <h2 class="text-xl font-semibold mb-4">A/V Sync</h2>
+                <div class="p-4 bg-gray-50 rounded mb-4">
+                    <p class="text-sm text-gray-600">Current Drift</p>
+                    <p id="av_drift" class="text-2xl font-bold">-</p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded">
+                    <p class="text-sm text-gray-600">Maximum Drift</p>
+                    <p id="av_max_drift" class="text-2xl font-bold">-</p>
+                </div>
+            </div>
+            
+            <!-- Performance Metrics -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Performance</h2>
+                <div class="p-4 bg-gray-50 rounded mb-2">
+                    <p class="text-sm text-gray-600">CPU Usage</p>
+                    <div class="flex items-center">
+                        <p id="cpu_usage" class="text-xl font-bold mr-2">-</p>
+                        <div class="w-full progress-bar">
+                            <div id="cpu_bar" class="progress-value bg-blue-500" style="width: 0%"></div>
                         </div>
-                        <div class="p-4 bg-gray-50 rounded">
-                            <p class="text-sm text-gray-600">Packets Received</p>
-                            <p id="input_packets" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50 rounded mb-2">
+                    <p class="text-sm text-gray-600">Memory Usage</p>
+                    <div class="flex items-center">
+                        <p id="memory_usage" class="text-xl font-bold mr-2">-</p>
+                        <div class="w-full progress-bar">
+                            <div id="memory_bar" class="progress-value bg-green-500" style="width: 0%"></div>
                         </div>
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50 rounded">
+                    <p class="text-sm text-gray-600">Encoding</p>
+                    <p id="encoding_fps" class="text-xl font-bold">-</p>
+                </div>
+            </div>
+            
+            <!-- Buffer Configuration -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Buffer Configuration</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Buffer Mode</p>
+                        <p id="buffer_mode" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Leaky Mode</p>
+                        <p id="leaky_mode" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Buffer Size</p>
+                        <p id="buffer_size" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Buffer Time</p>
+                        <p id="buffer_time" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Buffer Levels -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Queue Levels</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Video Input Queue -->
+                <div class="p-4 bg-gray-50 rounded">
+                    <h3 class="font-semibold mb-2">Video Input Queue</h3>
+                    <div class="progress-bar mb-2">
+                        <div id="video_input_bar" class="progress-value bg-blue-500" style="width: 0%"></div>
+                    </div>
+                    <div class="text-sm">
+                        <p>Level: <span id="video_input_percent">0%</span></p>
+                        <p>Underflows: <span id="video_input_underflows">0</span></p>
+                        <p>Overflows: <span id="video_input_overflows">0</span></p>
+                    </div>
+                </div>
+                <!-- Audio Input Queue -->
+                <div class="p-4 bg-gray-50 rounded">
+                    <h3 class="font-semibold mb-2">Audio Input Queue</h3>
+                    <div class="progress-bar mb-2">
+                        <div id="audio_input_bar" class="progress-value bg-green-500" style="width: 0%"></div>
+                    </div>
+                    <div class="text-sm">
+                        <p>Level: <span id="audio_input_percent">0%</span></p>
+                        <p>Underflows: <span id="audio_input_underflows">0</span></p>
+                        <p>Overflows: <span id="audio_input_overflows">0</span></p>
+                    </div>
+                </div>
+                <!-- Video Output Queue -->
+                <div class="p-4 bg-gray-50 rounded">
+                    <h3 class="font-semibold mb-2">Video Output Queue</h3>
+                    <div class="progress-bar mb-2">
+                        <div id="video_output_bar" class="progress-value bg-indigo-500" style="width: 0%"></div>
+                    </div>
+                    <div class="text-sm">
+                        <p>Level: <span id="video_output_percent">0%</span></p>
+                        <p>Underflows: <span id="video_output_underflows">0</span></p>
+                        <p>Overflows: <span id="video_output_overflows">0</span></p>
+                    </div>
+                </div>
+                <!-- Audio Output Queue -->
+                <div class="p-4 bg-gray-50 rounded">
+                    <h3 class="font-semibold mb-2">Audio Output Queue</h3>
+                    <div class="progress-bar mb-2">
+                        <div id="audio_output_bar" class="progress-value bg-purple-500" style="width: 0%"></div>
+                    </div>
+                    <div class="text-sm">
+                        <p>Level: <span id="audio_output_percent">0%</span></p>
+                        <p>Underflows: <span id="audio_output_underflows">0</span></p>
+                        <p>Overflows: <span id="audio_output_overflows">0</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Frames and Packets -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Frame Statistics -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Frame Statistics</h2>
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Processed</p>
+                        <p id="frames_processed" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Dropped</p>
+                        <p id="frames_dropped" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Delayed</p>
+                        <p id="frames_delayed" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <p class="text-sm text-gray-600 mb-1">Timestamp Status</p>
+                    <div id="timestamp_status" class="p-2 rounded bg-gray-100">
+                        <p>PTS Discontinuity: <span id="pts_discontinuity">No</span></p>
+                        <p>Gap Size: <span id="timestamp_gap">0 ms</span></p>
                     </div>
                 </div>
             </div>
 
-            <!-- Output Stats -->
+            <!-- Packet Statistics -->
             <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-xl font-semibold mb-4">Output Statistics</h2>
-                <div class="space-y-4">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="p-4 bg-gray-50 rounded">
-                            <p class="text-sm text-gray-600">Current Bitrate</p>
-                            <p id="output_bitrate" class="text-xl font-bold">-</p>
-                        </div>
-                        <div class="p-4 bg-gray-50 rounded">
-                            <p class="text-sm text-gray-600">Packets Sent</p>
-                            <p id="output_packets" class="text-xl font-bold">-</p>
-                        </div>
+                <h2 class="text-xl font-semibold mb-4">Packet Statistics</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Input Packets</p>
+                        <p id="input_packets" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Output Packets</p>
+                        <p id="output_packets" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Input Jitter</p>
+                        <p id="input_jitter" class="text-xl font-bold">-</p>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Output Jitter</p>
+                        <p id="output_jitter" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <p class="text-sm text-gray-600 mb-1">Network Status</p>
+                    <div id="network_status" class="p-2 rounded bg-gray-100">
+                        <p>Stability: <span id="network_stable">-</span></p>
+                        <p>Avg Packet Size: <span id="avg_packet_size">-</span></p>
                     </div>
                 </div>
             </div>
@@ -100,7 +297,7 @@
         const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
         const transcoderId = new URLSearchParams(window.location.search).get('channel');
         let bitrateChart;
-        const maxDataPoints = 20;
+        const maxDataPoints = 30;
         const bitrateData = {
             input: [],
             output: []
@@ -108,12 +305,11 @@
         const timeLabels = [];
 
         function formatBitrate(bps) {
-    // If the input is already in Kbps, convert to Mbps
-    const value = typeof bps === 'number' ? bps : parseFloat(bps);
-    
-    if (value >= 1000) return (value / 1000).toFixed(2) + ' Mbps';
-    return value.toFixed(2) + ' Kbps';
-}
+            const value = typeof bps === 'number' ? bps : parseFloat(bps);
+            
+            if (value >= 1000) return (value / 1000).toFixed(2) + ' Mbps';
+            return value.toFixed(2) + ' Kbps';
+        }
 
         function formatUptime(seconds) {
             const hours = Math.floor(seconds / 3600);
@@ -134,20 +330,42 @@
             const statusText = document.getElementById('status');
             
             if (status === 'running') {
-                statusBadge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800';
+                statusBadge.className = 'status-badge bg-green-100 text-green-800';
                 statusBadge.textContent = 'Running';
                 statusText.className = 'text-2xl font-bold p-1 rounded bg-green-100 text-green-800';
                 statusText.textContent = 'Running';
             } else if (status === 'stopped') {
-                statusBadge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-800';
+                statusBadge.className = 'status-badge bg-gray-100 text-gray-800';
                 statusBadge.textContent = 'Stopped';
                 statusText.className = 'text-2xl font-bold p-1 rounded bg-gray-100 text-gray-800';
                 statusText.textContent = 'Stopped';
             } else {
-                statusBadge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800';
+                statusBadge.className = 'status-badge bg-red-100 text-red-800';
                 statusBadge.textContent = 'Error';
                 statusText.className = 'text-2xl font-bold p-1 rounded bg-red-100 text-red-800';
                 statusText.textContent = 'Error';
+            }
+        }
+
+        function formatMs(ms) {
+            if (Math.abs(ms) < 1) {
+                return `${(ms * 1000).toFixed(2)} µs`;
+            }
+            return `${ms.toFixed(2)} ms`;
+        }
+
+        function updateProgressBar(elementId, value, maxValue = 100) {
+            const percent = Math.min(100, Math.max(0, (value / maxValue) * 100));
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.style.width = `${percent}%`;
+                
+                // Change color based on level
+                if (percent > 90) {
+                    element.className = 'progress-value bg-red-500';
+                } else if (percent > 70) {
+                    element.className = 'progress-value bg-yellow-500';
+                }
             }
         }
 
@@ -158,23 +376,141 @@
             // Update uptime
             document.getElementById('uptime').textContent = formatUptime(metrics.uptime);
             
-            // Update format info
-            document.getElementById('input_format').textContent = `Video: ${metrics.video_codec || 'Unknown'}`;
-            document.getElementById('output_format').textContent = `${metrics.video_codec || 'Unknown'} @ ${metrics.video_bitrate_kbps}k`;
-            
             // Update bitrates
             document.getElementById('input_bitrate').textContent = formatBitrate(metrics.input_bitrate);
             document.getElementById('output_bitrate').textContent = formatBitrate(metrics.output_bitrate);
             
-            // Update packet counters
-            document.getElementById('input_packets').textContent = metrics.packets?.input?.toLocaleString() || '-';
-            document.getElementById('output_packets').textContent = metrics.packets?.output?.toLocaleString() || '-';
+            // Update codec info
+            document.getElementById('input_format').textContent = metrics.input_format || 'Unknown';
+            document.getElementById('output_format').textContent = metrics.output_format || 'Unknown';
+            
+            // Update stream info
+            if (metrics.processing && metrics.processing.stream_info) {
+                const streamInfo = metrics.processing.stream_info;
+                document.getElementById('video_pid').textContent = streamInfo.video_pid || '-';
+                document.getElementById('audio_pid').textContent = streamInfo.audio_pid || '-';
+                document.getElementById('resolution').textContent = metrics.input_info?.resolution || 'Unknown';
+                document.getElementById('framerate').textContent = metrics.input_info?.framerate ? 
+                    `${metrics.input_info.framerate.toFixed(2)} fps` : 'Unknown';
+            }
+            
+            // Update buffer configuration
+            if (metrics.buffer_info) {
+                document.getElementById('buffer_mode').textContent = metrics.buffer_info.mode;
+                document.getElementById('leaky_mode').textContent = metrics.buffer_info.leaky_mode;
+                document.getElementById('buffer_size').textContent = `${metrics.buffer_info.buffer_size_mb || 0} MB`;
+                document.getElementById('buffer_time').textContent = `${metrics.buffer_info.buffer_time_ms || 0} ms`;
+            }
+            
+            // Update performance metrics
+            if (metrics.processing_metrics) {
+                const cpuUsage = (metrics.processing_metrics.cpu_usage / 100).toFixed(1);
+                document.getElementById('cpu_usage').textContent = `${cpuUsage}%`;
+                updateProgressBar('cpu_bar', metrics.processing_metrics.cpu_usage / 100, 100);
+                
+                const memoryUsage = metrics.processing_metrics.memory_usage_mb.toFixed(1);
+                document.getElementById('memory_usage').textContent = `${memoryUsage} MB`;
+                updateProgressBar('memory_bar', memoryUsage, 1000); // Assuming 1GB is maximum
+                
+                document.getElementById('encoding_fps').textContent = 
+                    `${metrics.processing_metrics.encoding_fps.toFixed(1)} fps`;
+            }
+            
+            // Update AV sync info
+            if (metrics.processing && metrics.processing.av_sync) {
+                const avSync = metrics.processing.av_sync;
+                document.getElementById('av_drift').textContent = formatMs(avSync.current_drift_ms);
+                document.getElementById('av_max_drift').textContent = formatMs(avSync.max_drift_ms);
+            }
+            
+            // Update frame statistics
+            if (metrics.processing) {
+                document.getElementById('frames_processed').textContent = 
+                    metrics.processing.frames_processed.toLocaleString();
+                document.getElementById('frames_dropped').textContent = 
+                    metrics.processing.frames_dropped.toLocaleString();
+                document.getElementById('frames_delayed').textContent = 
+                    metrics.processing.frames_delayed.toLocaleString();
+                
+                document.getElementById('pts_discontinuity').textContent = 
+                    metrics.processing.pts_discontinuity ? 'Yes' : 'No';
+                document.getElementById('timestamp_gap').textContent = 
+                    formatMs(metrics.processing.timestamp_gap_ms || 0);
+                
+                if (metrics.processing.pts_discontinuity) {
+                    document.getElementById('timestamp_status').className = 'p-2 rounded bg-yellow-100';
+                } else {
+                    document.getElementById('timestamp_status').className = 'p-2 rounded bg-green-100';
+                }
+            }
+            
+            // Update packet statistics
+            if (metrics.network) {
+                document.getElementById('input_packets').textContent = 
+                    metrics.network.input_packets.toLocaleString();
+                document.getElementById('output_packets').textContent = 
+                    metrics.network.output_packets.toLocaleString();
+                document.getElementById('input_jitter').textContent = 
+                    formatMs(metrics.network.input_jitter_ms);
+                document.getElementById('output_jitter').textContent = 
+                    formatMs(metrics.network.output_jitter_ms);
+                
+                document.getElementById('network_stable').textContent = 
+                    metrics.network.network_stable ? 'Stable' : 'Unstable';
+                document.getElementById('avg_packet_size').textContent = 
+                    `${metrics.network.avg_packet_size_bytes.toFixed(0)} bytes`;
+                
+                if (metrics.network.network_stable) {
+                    document.getElementById('network_status').className = 'p-2 rounded bg-green-100';
+                } else {
+                    document.getElementById('network_status').className = 'p-2 rounded bg-red-100';
+                }
+            }
+            
+            // Update queue levels
+            if (metrics.buffer_info) {
+                // Video input queue
+                if (metrics.buffer_info.video_queue) {
+                    const vq = metrics.buffer_info.video_queue;
+                    document.getElementById('video_input_percent').textContent = `${vq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('video_input_bar', vq.percent_full);
+                }
+                
+                // Audio input queue
+                if (metrics.buffer_info.audio_queue) {
+                    const aq = metrics.buffer_info.audio_queue;
+                    document.getElementById('audio_input_percent').textContent = `${aq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('audio_input_bar', aq.percent_full);
+                }
+                
+                // Video output queue
+                if (metrics.buffer_info.output_queue) {
+                    const voq = metrics.buffer_info.output_queue;
+                    document.getElementById('video_output_percent').textContent = `${voq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('video_output_bar', voq.percent_full);
+                }
+                
+                // Audio output queue
+                if (metrics.buffer_info.audio_out_queue) {
+                    const aoq = metrics.buffer_info.audio_out_queue;
+                    document.getElementById('audio_output_percent').textContent = `${aoq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('audio_output_bar', aoq.percent_full);
+                }
+            }
+            
+            // Fetch buffer level data to update underflow/overflow counters
+            fetchBufferStats();
             
             // Update chart data
             const now = new Date().toLocaleTimeString();
             timeLabels.push(now);
-            bitrateData.input.push(metrics.input_bitrate_mbps || 0);
-            bitrateData.output.push(metrics.output_bitrate_mbps || 0);
+            
+            // Get bitrate in Mbps for the chart
+            let inputMbps = metrics.input_bitrate_mbps || (metrics.input_bitrate ? metrics.input_bitrate / 1000000 : 0);
+            let outputMbps = metrics.output_bitrate_mbps || (metrics.output_bitrate ? metrics.output_bitrate / 1000000 : 0);
+            
+            bitrateData.input.push(inputMbps);
+            bitrateData.output.push(outputMbps);
             
             if (timeLabels.length > maxDataPoints) {
                 timeLabels.shift();
@@ -190,6 +526,68 @@
             }
         }
 
+        function fetchBufferStats() {
+            fetch(`${API_BASE}/transcoders/${transcoderId}/metrics`, {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.buffer_info) {
+                    // Process buffer data for queue levels
+                    return fetch(`${API_BASE}/transcoders/${transcoderId}/buffers`, {
+                        cache: 'no-store',
+                        headers: {
+                            'Cache-Control': 'no-cache'
+                        }
+                    });
+                }
+            })
+            .then(response => response.json())
+            .then(bufferData => {
+                if (bufferData && bufferData.queues) {
+                    const { queues } = bufferData;
+                    
+                    // Update video input queue
+                    if (queues.video_input) {
+                        document.getElementById('video_input_underflows').textContent = 
+                            queues.video_input.underflows.toLocaleString();
+                        document.getElementById('video_input_overflows').textContent = 
+                            queues.video_input.overflows.toLocaleString();
+                    }
+                    
+                    // Update audio input queue
+                    if (queues.audio_input) {
+                        document.getElementById('audio_input_underflows').textContent = 
+                            queues.audio_input.underflows.toLocaleString();
+                        document.getElementById('audio_input_overflows').textContent = 
+                            queues.audio_input.overflows.toLocaleString();
+                    }
+                    
+                    // Update video output queue
+                    if (queues.video_output) {
+                        document.getElementById('video_output_underflows').textContent = 
+                            queues.video_output.underflows.toLocaleString();
+                        document.getElementById('video_output_overflows').textContent = 
+                            queues.video_output.overflows.toLocaleString();
+                    }
+                    
+                    // Update audio output queue
+                    if (queues.audio_output) {
+                        document.getElementById('audio_output_underflows').textContent = 
+                            queues.audio_output.underflows.toLocaleString();
+                        document.getElementById('audio_output_overflows').textContent = 
+                            queues.audio_output.overflows.toLocaleString();
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching buffer stats:', error);
+            });
+        }
+
         function initCharts() {
             const bitrateCtx = document.getElementById('bitrateChart').getContext('2d');
             bitrateChart = new Chart(bitrateCtx, {
@@ -203,7 +601,8 @@
                             borderColor: 'rgb(59, 130, 246)',
                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             fill: true,
-                            tension: 0.1
+                            tension: 0.2,
+                            pointRadius: 0
                         },
                         {
                             label: 'Output',
@@ -211,13 +610,18 @@
                             borderColor: 'rgb(16, 185, 129)',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
-                            tension: 0.1
+                            tension: 0.2,
+                            pointRadius: 0
                         }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
                     scales: {
                         y: {
                             beginAtZero: true,
@@ -230,12 +634,22 @@
                             display: true,
                             title: {
                                 display: false
+                            },
+                            ticks: {
+                                maxTicksLimit: 6
                             }
                         }
                     },
                     plugins: {
                         legend: {
                             position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.parsed.y.toFixed(2)} Mbps`;
+                                }
+                            }
                         }
                     },
                     animation: false
@@ -249,6 +663,12 @@
                 if (!response.ok) throw new Error('Failed to load transcoder info');
                 const transcoder = await response.json();
                 document.getElementById('transcoderTitle').textContent = `${transcoder.name} Statistics`;
+                
+                // Set initial values
+                document.getElementById('video_pid').textContent = transcoder.input.video_pid || '-';
+                document.getElementById('audio_pid').textContent = transcoder.input.audio_pid || '-';
+                document.getElementById('buffer_size').textContent = `${transcoder.buffer_size_mb || 1} MB`;
+                document.getElementById('buffer_time').textContent = `${transcoder.buffer_time_ms || 1000} ms`;
             } catch (error) {
                 console.error('Error loading transcoder info:', error);
             }
