@@ -459,96 +459,119 @@ def get_transcoder_metrics(transcoder_id):
         metrics_port = transcoder.get("metrics_port", 9999)
         
         try:
-            response = requests.get(f"http://localhost:{metrics_port}/stats", timeout=2)
+            # First, get basic stats from /stats endpoint
+            stats_response = requests.get(f"http://localhost:{metrics_port}/stats", timeout=2)
+            if stats_response.status_code != 200:
+                logger.error(f"Stats endpoint returned status {stats_response.status_code}")
+                raise Exception(f"Failed to fetch stats: {stats_response.status_code}")
             
-            if response.status_code != 200:
-                logger.error(f"Metrics endpoint returned status {response.status_code}")
-                raise Exception(f"Failed to fetch metrics: {response.status_code}")
+            stats_data = stats_response.json()
             
-            # Parse JSON response from the binary transcoder
-            metrics_data = response.json()
+            # Then, get detailed metrics from /metrics endpoint
+            metrics_response = requests.get(f"http://localhost:{metrics_port}/metrics", timeout=2)
+            if metrics_response.status_code != 200:
+                logger.error(f"Metrics endpoint returned status {metrics_response.status_code}")
+                # If metrics endpoint fails, continue with just stats data
+                metrics_data = {}
+            else:
+                metrics_data = metrics_response.json()
             
-            # DIRECT FIELDS - Directly map fields from source
+            # Build the complete response by combining both endpoints
             result = {
-                # Basic info - use exact field names from the binary
-                "timestamp": str(metrics_data.get("timestamp_unix", "")),
-                "uptime": metrics_data.get("uptime_seconds", 0),
-                "input_bitrate_mbps": metrics_data.get("input_bitrate_mbps", 0.0),
-                "output_bitrate_mbps": metrics_data.get("output_bitrate_mbps", 0.0),
-                "video_codec": metrics_data.get("video_codec", "unknown"),
-                "video_bitrate_kbps": metrics_data.get("video_bitrate_kbps", 0),
-                "audio_codec": metrics_data.get("audio_codec", "unknown"),
-                "audio_bitrate_kbps": metrics_data.get("audio_bitrate_kbps", 0),
-                
-                # Calculate derived fields consistently
-                "input_bitrate": int(metrics_data.get("input_bitrate_mbps", 0.0) * 1000),  # Convert to kbps
-                "output_bitrate": int(metrics_data.get("output_bitrate_mbps", 0.0) * 1000),  # Convert to kbps
-                
-                # Status mapping
-                "status": "running" if metrics_data.get("pipeline_state", "") == "PLAYING" else "error",
-                
-                # Map packet stats exactly as in original data
-                "packets": {
-                    "input": metrics_data.get("input_packets_total", 0),
-                    "output": metrics_data.get("output_packets_total", 0)
-                },
-                
-                # Include stream info
-                "input_info": metrics_data.get("input_info", {}),
-                
-                # Include buffer info directly
-                "buffer_info": metrics_data.get("buffer_info", {}),
-                
-                # Bitrate history - direct mapping
-                "bitrate_history": metrics_data.get("bitrate_history", {})
+                # Basic info from /stats
+                "timestamp": str(stats_data.get("timestamp_unix", "")),
+                "uptime": stats_data.get("uptime_seconds", 0),
+                "video_codec": stats_data.get("video_codec", "unknown"),
+                "video_bitrate_kbps": stats_data.get("video_bitrate_kbps", 0),
+                "audio_codec": stats_data.get("audio_codec", "unknown"),
+                "audio_bitrate_kbps": stats_data.get("audio_bitrate_kbps", 0),
+                "input_info": stats_data.get("input_info", {}),
+                "buffer_info": stats_data.get("buffer_info", {}),
+                "status": "running" if stats_data.get("pipeline_state", "") == "PLAYING" else "error"
             }
             
-            # PROCESSING METRICS - Complex field that needs careful mapping
-            if "processing_metrics" in metrics_data:
-                proc_data = metrics_data["processing_metrics"]
-                
-                # Map the processing metrics data directly
+            # Add bitrate info - check both sources
+            if "bitrates" in metrics_data:
+                result["input_bitrate_mbps"] = metrics_data["bitrates"]["input_mbps"]
+                result["output_bitrate_mbps"] = metrics_data["bitrates"]["output_mbps"]
+                result["bitrate_history"] = metrics_data["bitrates"]["history"]
+            else:
+                # Fallback to stats endpoint
+                result["input_bitrate_mbps"] = stats_data.get("input_bitrate_mbps", 0.0)
+                result["output_bitrate_mbps"] = stats_data.get("output_bitrate_mbps", 0.0)
+                result["bitrate_history"] = stats_data.get("bitrate_history", {})
+            
+            # Add input/output bitrate in kbps (for compatibility)
+            result["input_bitrate"] = int(result["input_bitrate_mbps"] * 1000)
+            result["output_bitrate"] = int(result["output_bitrate_mbps"] * 1000)
+            
+            # Add processing metrics from /metrics endpoint
+            if "processing" in metrics_data:
+                proc_data = metrics_data["processing"]
                 result["processing"] = {
                     "frames_processed": proc_data.get("frames_processed", 0),
-                    "frames_dropped": 0,  # Not provided in binary output
-                    "frames_delayed": 0,  # Not provided in binary output
-                    "avg_qp_value": 0.0,  # Not provided in binary output
-                    "min_qp_value": 0.0,  # Not provided in binary output
-                    "max_qp_value": 0.0,  # Not provided in binary output
-                    "avg_encoding_time_ms": 0.0,  # Not provided in binary output
-                    "audio_video_drift_ms": 0.0,  # Not provided in binary output
-                    "last_audio_pts": 0,  # Not provided in binary output
-                    "last_video_pts": 0,  # Not provided in binary output
-                    "max_drift_ms": 0.0,  # Not provided in binary output
-                    "cpu_usage_percent": proc_data.get("cpu_usage", 0.0),
-                    "memory_usage_bytes": int(proc_data.get("memory_usage_mb", 0.0) * 1024 * 1024),  # Convert to bytes
+                    "frames_dropped": proc_data.get("frames_dropped", 0), 
+                    "frames_delayed": proc_data.get("frames_delayed", 0),
+                    "avg_qp_value": proc_data.get("avg_qp_value", 0.0),
+                    "min_qp_value": proc_data.get("min_qp_value", 0.0),
+                    "max_qp_value": proc_data.get("max_qp_value", 0.0),
+                    "avg_encoding_time_ms": proc_data.get("avg_encoding_time_ms", 0.0),
+                    "cpu_usage_percent": proc_data.get("cpu_usage_percent", 0.0),
+                    "memory_usage_bytes": int(proc_data.get("memory_usage_mb", 0.0) * 1024 * 1024),
                     "video_encoding_fps": proc_data.get("encoding_fps", 0.0),
                     "end_to_end_latency_ms": proc_data.get("end_to_end_latency_ms", 0.0),
-                    "last_input_pts": 0,  # Not provided in binary output
-                    "last_output_pts": 0,  # Not provided in binary output
-                    "timestamp_gap_ns": 0,  # Not provided in binary output
-                    "pts_discontinuity": False  # Not provided in binary output
+                    "pts_discontinuity": proc_data.get("pts_discontinuity", False),
+                    "timestamp_gap_ns": int(proc_data.get("timestamp_gap_ms", 0.0) * 1000000),
+                    "stream_info": proc_data.get("stream_info", {})
                 }
                 
-                # Also include stream info in the processing section
-                if "input_info" in metrics_data:
-                    result["processing"]["stream_info"] = metrics_data["input_info"]
+                # Add AV sync data if available
+                if "av_sync" in proc_data:
+                    av_sync = proc_data["av_sync"]
+                    result["processing"]["audio_video_drift_ms"] = av_sync.get("current_drift_ms", 0.0)
+                    result["processing"]["last_audio_pts"] = av_sync.get("last_audio_pts", 0)
+                    result["processing"]["last_video_pts"] = av_sync.get("last_video_pts", 0)
+                    result["processing"]["max_drift_ms"] = av_sync.get("max_drift_ms", 0.0)
                 
-                # Use processing_metrics for top-level stats too
+                # Update top-level stats too
                 result["frames_processed"] = proc_data.get("frames_processed", 0)
-                result["dropped_frames"] = 0  # Not in the binary output
-                result["cpu_usage"] = proc_data.get("cpu_usage", 0.0) 
+                result["dropped_frames"] = proc_data.get("frames_dropped", 0)
+                result["cpu_usage"] = proc_data.get("cpu_usage_percent", 0.0)
                 result["memory_usage"] = proc_data.get("memory_usage_mb", 0.0)
             
-            # NETWORK & A/V SYNC - Not provided in binary output
-            result["network"] = None
-            result["av_sync"] = None
-            
-            # QUEUE LEVELS - Map directly from the buffer_info
-            if "buffer_info" in metrics_data:
-                buffer_info = metrics_data["buffer_info"]
+            # Add network metrics from /metrics endpoint
+            if "network" in metrics_data:
+                network_data = metrics_data["network"]
+                result["network"] = {
+                    "input_jitter_ms": network_data.get("input_jitter_ms", 0.0),
+                    "output_jitter_ms": network_data.get("output_jitter_ms", 0.0),
+                    "total_input_packets": network_data.get("input_packets", 0),
+                    "total_output_packets": network_data.get("output_packets", 0),
+                    "dropped_packets": network_data.get("dropped_packets", 0),
+                    "avg_packet_size_bytes": network_data.get("avg_packet_size_bytes", 0.0),
+                    "network_stable": network_data.get("network_stable", True),
+                    "reconnection_attempts": network_data.get("reconnection_attempts", 0),
+                    "successful_reconnections": network_data.get("successful_reconnections", 0),
+                    "last_reconnection_time": network_data.get("last_reconnection_time", 0)
+                }
                 
-                # Map each queue with its correct field structure
+                # Also update packet counts for compatibility
+                result["packets"] = {
+                    "input": network_data.get("input_packets", 0),
+                    "output": network_data.get("output_packets", 0)
+                }
+            else:
+                # Use stats endpoint data as fallback
+                result["packets"] = {
+                    "input": stats_data.get("input_packets_total", 0),
+                    "output": stats_data.get("output_packets_total", 0)
+                }
+            
+            # Process queue data (already in the right format from /stats)
+            if "buffer_info" in stats_data:
+                buffer_info = stats_data["buffer_info"]
+                
+                # Map queue data with proper field names
                 for queue_name in ["video_queue", "audio_queue", "output_queue", "audio_out_queue"]:
                     if queue_name in buffer_info:
                         queue_data = buffer_info[queue_name]
@@ -560,16 +583,15 @@ def get_transcoder_metrics(transcoder_id):
                         }.get(queue_name)
                         
                         if api_field_name:
-                            # Create a structure that matches what QueueLevelData expects
                             result[api_field_name] = {
                                 "current_buffers": queue_data.get("buffers", 0),
                                 "current_bytes": queue_data.get("bytes", 0),
-                                "current_time_ns": int(queue_data.get("time_ms", 0) * 1000000),  # Convert ms to ns
+                                "current_time_ns": int(queue_data.get("time_ms", 0) * 1000000),
                                 "max_buffers": 0,  # Not provided directly
-                                "max_bytes": 0,  # Not provided directly
+                                "max_bytes": 0,    # Not provided directly
                                 "max_time_ns": 0,  # Not provided directly
                                 "overflow_count": 0,  # Not provided directly
-                                "underflow_count": 0,  # Not provided directly
+                                "underflow_count": 0, # Not provided directly
                                 "percent_full": queue_data.get("percent_full", 0.0)
                             }
             
