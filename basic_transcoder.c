@@ -1692,11 +1692,51 @@ static void update_process_metrics(AppData *data) {
     if (getrusage(RUSAGE_SELF, &usage) == 0) {
         g_mutex_lock(&data->stats_mutex);
         
-        // Update CPU usage (user + system time)
-        // This is cumulative time, not a percentage
-        data->stats.processing.cpu_usage_percent = 
-            (usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 100.0 + 
-            (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 10000.0;
+        // Get current time for calculating interval
+        gint64 current_time = g_get_monotonic_time();
+        
+        // Calculate total CPU time in microseconds
+        gint64 current_cpu_time = (usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1000000LL +
+                                  (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec);
+        
+        // Check if we have a previous measurement
+        static gint64 last_cpu_time = 0;
+        static gint64 last_wall_time = 0;
+        static gboolean first_call = TRUE;
+        
+        if (!first_call) {
+            // Calculate deltas
+            gint64 cpu_time_delta = current_cpu_time - last_cpu_time;
+            gint64 wall_time_delta = current_time - last_wall_time;
+            
+            if (wall_time_delta > 0) {
+                // Calculate CPU usage percentage
+                gdouble cpu_usage = (gdouble)cpu_time_delta / (gdouble)wall_time_delta * 100.0;
+                
+                // Get number of CPU cores
+                gint num_cores = g_get_num_processors();
+                if (num_cores <= 0) {
+                    num_cores = 1;  // Fallback
+                }
+                
+                // Normalize to 0-100% scale (divide by number of cores)
+                cpu_usage = cpu_usage / num_cores;
+                
+                // Clamp to reasonable bounds
+                if (cpu_usage < 0.0) cpu_usage = 0.0;
+                if (cpu_usage > 100.0) cpu_usage = 100.0;
+                
+                data->stats.processing.cpu_usage_percent = cpu_usage;
+            }
+        } else {
+            // First call - initialize but don't calculate
+            data->stats.processing.cpu_usage_percent = 0.0;
+            first_call = FALSE;
+        }
+        
+        // Update last measurements for next time
+        last_cpu_time = current_cpu_time;
+        last_wall_time = current_time;
         
         // Memory usage in bytes (maxrss is in kilobytes)
         data->stats.processing.memory_usage_bytes = usage.ru_maxrss * 1024;
