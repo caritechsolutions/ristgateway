@@ -1797,6 +1797,7 @@ static void update_queue_levels(AppData *data) {
 }
 
 // --- Build Pipeline (Manual Linking, uses DISCOVERED Input Codecs) ---
+
 static gboolean build_pipeline_manual(AppData *data, GError **error) {
     GstElement *source = NULL, *demux = NULL, *mux = NULL, *sink = NULL;
     GstElement *video_queue = NULL, *video_parser = NULL, *video_decode = NULL, *video_convert = NULL;
@@ -1804,7 +1805,9 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     GstElement *video_overlay = NULL;
     GstElement *audio_queue = NULL, *audio_parser = NULL, *audio_decode = NULL, *audio_convert = NULL;
     GstElement *audio_resample = NULL, *audio_encode = NULL;
-    GstElement *video_out_queue = NULL, *audio_out_queue = NULL; // New output queues
+    GstElement *video_out_queue = NULL, *audio_out_queue = NULL;
+    GstElement *mux_out_queue = NULL; // Output queue after muxer
+    GstElement *watchdog = NULL; // Watchdog element
     gboolean link_ok; GstPad *sinkpad = NULL, *srcpad = NULL; gulong probe_id;
     gchar *output_host = NULL; gchar *port_str = NULL; guint output_port = 0;
 
@@ -1841,7 +1844,7 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     // Create elements
     source = gst_element_factory_make("udpsrc", "udp-source");
     demux = gst_element_factory_make("tsdemux", "ts-demuxer");
-    video_queue = gst_element_factory_make("queue", "video-queue");  // Using queue2 for better buffer control
+    video_queue = gst_element_factory_make("queue", "video-queue");
     if (vid_par_f) 
         video_parser = gst_element_factory_make(vid_par_f, "video-parser");
     video_decode = gst_element_factory_make(vid_dec_f, "video-decoder");
@@ -1854,7 +1857,7 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
         video_overlay = gst_element_factory_make("clockoverlay", "clock-overlay");
     }
     
-    audio_queue = gst_element_factory_make("queue", "audio-queue");  // Using queue2 for better buffer control
+    audio_queue = gst_element_factory_make("queue", "audio-queue");
     if (aud_par_f) 
         audio_parser = gst_element_factory_make(aud_par_f, "audio-parser");
     audio_decode = gst_element_factory_make(aud_dec_f, "audio-decoder");
@@ -1865,17 +1868,35 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     mux = gst_element_factory_make("mpegtsmux", "ts-muxer");
     if (mux) {
         // Configure muxer with appropriate latency settings
+        guint64 total_bitrate = (data->video_bitrate_kbps + data->audio_bitrate_kbps) * 1000;
+        
         g_object_set(mux, 
-                   "latency", 2000 * GST_MSECOND,  // Increased to 2000ms
-                   NULL);
-        
-        
+                    "bitrate", total_bitrate,
+                    "alignment", 7,
+                    "latency", 2000 * GST_MSECOND,
+                    NULL);
     }
     
     // Create new output queues using regular queue elements
     video_out_queue = gst_element_factory_make("queue", "video-out-queue");
     audio_out_queue = gst_element_factory_make("queue", "audio-out-queue");
- 
+    
+    // Create new queue between muxer and sink
+    mux_out_queue = gst_element_factory_make("queue", "mux-out-queue");
+    
+    // Create watchdog element
+    watchdog = gst_element_factory_make("watchdog", "stream-watchdog");
+    if (watchdog) {
+        // Configure watchdog timeout using the same value from AppData
+        gint watchdog_timeout_ms = data->watchdog_timeout_sec * 1000;
+        g_object_set(watchdog, "timeout", watchdog_timeout_ms, NULL);
+        
+        // Enable the application's watchdog recovery mechanism
+        data->watchdog_enabled = TRUE;
+        
+        g_info("Configured GStreamer watchdog with timeout: %d ms", watchdog_timeout_ms);
+    }
+    
     data->video_out_queue = video_out_queue;
     data->audio_out_queue = audio_out_queue;
     
@@ -1891,7 +1912,8 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     if (!source || !demux || !mux || !sink || !video_queue || (vid_par_f && !video_parser) || 
         !video_decode || !video_convert || !video_scale || !video_rate || !audio_queue || 
         (aud_par_f && !audio_parser) || !audio_decode || !audio_convert || !audio_resample ||
-        (data->add_clock_overlay && !video_overlay) || !video_out_queue || !audio_out_queue) {
+        (data->add_clock_overlay && !video_overlay) || !video_out_queue || !audio_out_queue || 
+        !mux_out_queue || !watchdog) {
         g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to create elements");
         goto build_fail_cleanup;
     }
@@ -1943,8 +1965,8 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     g_object_set(sink, "host", output_host, "port", output_port, "sync", FALSE, NULL);
     g_object_set(sink, "buffer-size", 4194304, NULL);      // 4MB buffer size, increased
     g_object_set(sink, "max-lateness", -1, NULL);          // Allow late buffers
-    g_object_set(sink, "qos", FALSE, NULL);                // Disable QoS
-    g_object_set(sink, "async", FALSE, NULL);              // Disable async behavior for better latency
+    g_object_set(sink, "qos", TRUE, NULL);                // Disable QoS
+    g_object_set(sink, "async", TRUE, NULL);              // Disable async behavior for better latency
     
     g_free(output_host);
     output_host = NULL;
@@ -1973,16 +1995,28 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     } else if (g_strcmp0(data->video_codec, "h264") == 0) {
         video_encode = gst_element_factory_make("x264enc", "video-encoder");
         if (video_encode) {
-            g_object_set(video_encode, 
-                         "bitrate", (guint)data->video_bitrate_kbps, 
-                         "tune", 0x00000004,  // zerolatency
-                         "key-int-max", data->keyframe_interval,
-                         NULL);
-            
+            // Configure for CBR live streaming
+            g_object_set(video_encode,
+                "bitrate", (guint)data->video_bitrate_kbps,
+                "pass", 0,           // String value "cbr" for constant bitrate
+                "tune", 0x00000004,      // zerolatency
+                "byte-stream", TRUE,     // Proper stream format
+                "vbv-buf-capacity", 50, // 8000ms buffer size
+                "rc-lookahead", 10,      // Small lookahead for rate stability
+                "mb-tree", FALSE,        // Disable mb-tree which can cause fluctuations
+                "threads", 4,            // Limit threads for more consistent encoding
+                NULL);
+
+            // Disable B-frames for live streaming (This block was already correct for no B-frames)
+            g_object_set(video_encode,
+                        "b-adapt", FALSE,
+                        "bframes", 0,
+                        NULL);
+
             // Set encoding preset based on configuration
             if (data->encoding_preset) {
-                g_info("Setting x264 preset to '%s'", data->encoding_preset);
-                
+                g_info("Setting x264 preset to '%s' with CBR mode", data->encoding_preset);
+
                 // Map preset string to x264enc speed-preset value
                 gint speed_preset = 6;  // Default "medium"
                 if (g_strcmp0(data->encoding_preset, "ultrafast") == 0) speed_preset = 1;
@@ -1994,20 +2028,35 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
                 else if (g_strcmp0(data->encoding_preset, "slow") == 0) speed_preset = 7;
                 else if (g_strcmp0(data->encoding_preset, "slower") == 0) speed_preset = 8;
                 else if (g_strcmp0(data->encoding_preset, "veryslow") == 0) speed_preset = 9;
-                
+
                 g_object_set(video_encode, "speed-preset", speed_preset, NULL);
+            } else {
+                // For live, default to a faster preset if none specified
+                g_object_set(video_encode, "speed-preset", 7, NULL); // veryfast
+                g_info("No preset specified, defaulting to 'veryfast' for live CBR encoding");
             }
-            
+
+            g_info("Configured x264enc for live CBR: bitrate=%d kbps, vbv-buf-capacity=%d kbit, vbv-max-bitrate=%d kbit",
+                  data->video_bitrate_kbps,
+                  data->video_bitrate_kbps, // Reflects the new vbv-buf-capacity setting
+                  data->video_bitrate_kbps  // Reflects the new vbv-max-bitrate setting
+                  );
+
             // Add parser for the encoded output
             video_out_parser = gst_element_factory_make("h264parse", "video-out-parser");
-            if (!video_out_parser) 
+            if (!video_out_parser) {
                 g_warning("Failed to create h264parse for output");
-            
+            } else {
+                // Important for downstream elements to understand stream properties,
+                // especially for clients joining mid-stream. Sends SPS/PPS with I-frames.
+                g_object_set(video_out_parser, "config-interval", -1, NULL);
+            }
+
             // Add encoder quality probe
             GstPad *enc_src_pad = gst_element_get_static_pad(video_encode, "src");
             if (enc_src_pad) {
-                gst_pad_add_probe(enc_src_pad, GST_PAD_PROBE_TYPE_BUFFER, 
-                                 encoder_quality_probe_cb, data, NULL);
+                gst_pad_add_probe(enc_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
+                                encoder_quality_probe_cb, data, NULL);
                 gst_object_unref(enc_src_pad);
             }
         }
@@ -2061,9 +2110,26 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
         gint leaky_val = (data->leaky_mode == LEAKY_MODE_UPSTREAM) ? 1 : 2;
         g_object_set(audio_out_queue, "leaky", leaky_val, NULL);
     }
+    
+    // Configure the muxer output queue
+    g_object_set(mux_out_queue,
+               "max-size-buffers", 100,         // Larger buffer for muxed output
+               "max-size-bytes", buffer_size_bytes,  // Full buffer size
+               "max-size-time", 5000 * GST_MSECOND,  // 5 seconds buffer
+               NULL);
+    
+    // Set leaky property if needed (usually downstream for output)
+    if (data->leaky_mode != LEAKY_MODE_NONE) {
+        gint leaky_val = (data->leaky_mode == LEAKY_MODE_UPSTREAM) ? 1 : 2;
+        g_object_set(mux_out_queue, "leaky", leaky_val, NULL);
+        g_info("Setting leaky mode %d on muxer output queue", leaky_val);
+    }
+    
+    g_info("Added muxer output queue with %d buffers, %zu bytes, %d ms", 
+           100, buffer_size_bytes, 5000);
 
     // Add elements to pipeline
-    gst_bin_add_many(GST_BIN(data->pipeline), source, demux, mux, sink, 
+    gst_bin_add_many(GST_BIN(data->pipeline), source, demux, mux, mux_out_queue, watchdog, sink, 
                      video_queue, video_decode, video_convert, video_scale, video_rate, 
                      video_encode, audio_queue, audio_decode, audio_convert, 
                      audio_resample, audio_encode, video_out_queue, audio_out_queue, NULL);
@@ -2187,9 +2253,21 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
         goto build_fail_cleanup;
     }
 
-    // Link mux to sink
-    if (!gst_element_link(mux, sink)) {
-        g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to link muxer to sink");
+    // Link mux to mux_out_queue
+    if (!gst_element_link(mux, mux_out_queue)) {
+        g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to link muxer to muxer output queue");
+        goto build_fail_cleanup;
+    }
+    
+    // Link mux_out_queue to watchdog
+    if (!gst_element_link(mux_out_queue, watchdog)) {
+        g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to link muxer output queue to watchdog");
+        goto build_fail_cleanup;
+    }
+    
+    // Link watchdog to sink
+    if (!gst_element_link(watchdog, sink)) {
+        g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to link watchdog to sink");
         goto build_fail_cleanup;
     }
 
@@ -2197,6 +2275,10 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     g_signal_connect(demux, "pad-added", G_CALLBACK(demux_pad_added_handler_pid), data);
     
     g_info("Pipeline built with additional output queues to improve latency handling");
+    g_info("Added muxer output queue between mpegtsmux and udpsink for smoother transmission");
+    g_info("Added GStreamer watchdog with %d ms timeout - will trigger pipeline restart on stall", 
+           data->watchdog_timeout_sec * 1000);
+    
     return TRUE;
 
 build_fail_cleanup:
@@ -2414,6 +2496,13 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
             GError *e; 
             gst_message_parse_error(message, &e, &dbg); 
             g_error("ERR from %s: %s (%s)", GST_OBJECT_NAME(message->src), e->message, dbg ? dbg : ""); 
+            
+            // Check if this is a watchdog timeout error
+            gboolean is_watchdog_error = (g_strcmp0(GST_OBJECT_NAME(message->src), "stream-watchdog") == 0);
+            if (is_watchdog_error) {
+                g_warning("Watchdog timeout detected! Triggering recovery");
+            }
+            
             g_error_free(e); 
             g_free(dbg); 
             
@@ -2422,9 +2511,10 @@ static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer data) {
             d->stats.network.network_stable = FALSE;
             g_mutex_unlock(&d->stats_mutex);
             
-            // Attempt recovery based on error type
-            if (d->watchdog_enabled && !d->recovery.recovery_active) {
-                g_warning("Triggering recovery due to error");
+            // For watchdog errors, always attempt recovery regardless of other settings
+            if (is_watchdog_error || (d->watchdog_enabled && !d->recovery.recovery_active)) {
+                g_warning("Triggering recovery due to %s", 
+                         is_watchdog_error ? "watchdog timeout" : "error");
                 attempt_recovery(d);
             } else {
                 g_main_loop_quit(d->loop);
