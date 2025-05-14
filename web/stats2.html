@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>RIST Channel Stats</title>
+    <!-- Added HLS.js for video player -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.6.0-beta.1.0.canary.10759/hls.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -42,6 +47,73 @@
             color: white;
             text-decoration: none;
             border-radius: 4px;
+        }
+
+        /* Added grid layout to accommodate player */
+        .top-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .top-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .channel-info {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+
+        /* Player styles */
+        .player-section {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+
+        .player-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .reload-button {
+            padding: 6px 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .reload-button:hover {
+            background: #0069d9;
+        }
+
+        .reload-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        #playerContainer {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
         }
 
         .clients-list {
@@ -130,8 +202,22 @@
             <a href="index.html" class="back-button">Back to Channels</a>
         </header>
 
-        <div class="channel-info">
-            <h3>Channel Information</h3>
+        <!-- New grid layout for channel info and player -->
+        <div class="top-section">
+            <div class="channel-info">
+                <h3>Channel Information</h3>
+            </div>
+
+            <!-- Added player section -->
+            <div class="player-section">
+                <div class="player-header">
+                    <h3>Live Preview</h3>
+                    <button onclick="restartFFmpeg()" class="reload-button">Reload Player</button>
+                </div>
+                <div id="playerContainer">
+                    <video id="video" controls></video>
+                </div>
+            </div>
         </div>
 
         <div class="clients-list">
@@ -147,6 +233,14 @@
         const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000`;
         let channelInfo = null;
         let selectedClientId = null;
+        
+        // Track player state
+        let playerInitialized = false;
+        let hlsInstance = null;
+        let lastPlayerError = 0;
+        let lastPlayerInitTime = 0;
+        let playerInitAttempts = 0;
+        let channelName = '';
 
         const urlParams = new URLSearchParams(window.location.search);
         const channelId = urlParams.get('channel');
@@ -231,16 +325,217 @@
             `;
         }
 
+        // Player initialization function - similar to the transcoder version
+        function initPlayer(force = false) {
+            const now = Date.now();
+            
+            // Prevent too frequent reinitializations
+            if (!force && playerInitialized && (now - lastPlayerInitTime < 10000)) {
+                console.log("Player recently initialized, skipping...");
+                return;
+            }
+            
+            // Track initialization time
+            lastPlayerInitTime = now;
+            playerInitAttempts++;
+            
+            console.log(`Initializing player (attempt ${playerInitAttempts}), force=${force}`);
+            
+            const playerContainer = document.getElementById('playerContainer');
+            
+            // Clean up existing HLS instance if it exists
+            if (hlsInstance) {
+                console.log("Destroying previous HLS instance");
+                try {
+                    hlsInstance.destroy();
+                } catch (e) {
+                    console.error("Error destroying HLS instance:", e);
+                }
+                hlsInstance = null;
+            }
+            
+            // Always create fresh video element
+            playerContainer.innerHTML = '<video id="video" controls class="w-full h-full"></video>';
+            const newVideo = document.getElementById('video');
+            
+            // Use the standard content path for channels
+            const url = `${window.location.protocol}//${window.location.hostname}/content/${channelName}/playlist.m3u8`;
+            
+            console.log(`Loading stream: ${url}`);
+            
+            if (Hls.isSupported()) {
+                hlsInstance = new Hls({
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 60,
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    // Add more robust error recovery
+                    fragLoadingMaxRetry: 6,
+                    manifestLoadingMaxRetry: 6,
+                    levelLoadingMaxRetry: 6,
+                    fragLoadingRetryDelay: 1000,
+                    manifestLoadingRetryDelay: 1000,
+                    levelLoadingRetryDelay: 1000
+                });
+                
+                hlsInstance.loadSource(url);
+                hlsInstance.attachMedia(newVideo);
+                
+                hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+                    console.log("Manifest parsed successfully, attempting autoplay");
+                    newVideo.play().catch(e => {
+                        console.warn('Autoplay prevented:', e);
+                    });
+                });
+                
+                hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+                    console.warn(`HLS error: type=${data.type}, details=${data.details}`, data);
+                    
+                    // Record error time to prevent too frequent recovery attempts
+                    lastPlayerError = Date.now();
+                    
+                    if (data.fatal) {
+                        console.error("Fatal HLS error:", data);
+                        
+                        // Handle different error types
+                        switch(data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.log('Network error - attempting to reload stream');
+                                hlsInstance.startLoad();
+                                break;
+                                
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.log('Media error - attempting recovery');
+                                hlsInstance.recoverMediaError();
+                                break;
+                                
+                            default:
+                                // For other fatal errors, we'll recreate the player
+                                // but not too frequently to prevent rapid reinitialization loops
+                                console.log('Fatal error - will recreate player after delay');
+                                
+                                // Ensure we don't have multiple attempts active
+                                if (hlsInstance) {
+                                    const instance = hlsInstance;
+                                    hlsInstance = null;
+                                    
+                                    // Safe destroy with delay
+                                    setTimeout(() => {
+                                        try {
+                                            instance.destroy();
+                                        } catch (e) {
+                                            console.error("Error destroying HLS instance:", e);
+                                        }
+                                        
+                                        // After a longer delay, try to initialize again
+                                        // Only if no other initialization has happened in between
+                                        setTimeout(() => {
+                                            if (Date.now() - lastPlayerInitTime >= 10000) {
+                                                console.log("Attempting player recovery after fatal error");
+                                                initPlayer(true);
+                                            }
+                                        }, 5000);
+                                    }, 500);
+                                }
+                                break;
+                        }
+                    }
+                });
+            } else if (newVideo.canPlayType('application/vnd.apple.mpegurl')) {
+                // For Safari
+                newVideo.src = url;
+                newVideo.addEventListener('loadedmetadata', () => {
+                    newVideo.play().catch(e => {
+                        console.warn('Autoplay prevented in Safari:', e);
+                    });
+                });
+            } else {
+                playerContainer.innerHTML = 
+                    '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#dc3545;">HLS playback not supported in this browser</div>';
+                return;
+            }
+            
+            playerInitialized = true;
+            console.log("Player initialization completed");
+        }
+
+        // FFmpeg restart function
+        async function restartFFmpeg() {
+            try {
+                // Get and update button state
+                const button = document.querySelector('.reload-button');
+                button.disabled = true;
+                button.textContent = 'Restarting...';
+
+                console.log("User requested player restart");
+                
+                // First destroy existing player
+                if (hlsInstance) {
+                    console.log("Destroying HLS instance before restart");
+                    try {
+                        hlsInstance.destroy();
+                    } catch (e) {
+                        console.error("Error destroying HLS instance:", e);
+                    }
+                    hlsInstance = null;
+                }
+                
+                try {
+                    // Make the restart request to the server
+                    let type = channelInfo.channel_type === 'receive' ? 'receiver' : 'sender';
+                    console.log(`Sending restart request to ${API_BASE}/channels/${channelId}/ffmpeg/restart`);
+                    const response = await fetch(`${API_BASE}/channels/${channelId}/ffmpeg/restart`, {
+                        method: 'PUT'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed to restart FFmpeg: ${response.status}`);
+                    }
+                    
+                    console.log("Server restart request successful, waiting before reloading player");
+                } catch (error) {
+                    console.error('Error restarting FFmpeg:', error);
+                }
+                
+                // Wait for restart to complete and reload player regardless of server response
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                console.log("Reinitializing player after restart wait");
+                
+                // Reset player state
+                playerInitialized = false;
+                playerInitAttempts = 0;
+                lastPlayerInitTime = 0;
+                
+                // Force a new player initialization
+                initPlayer(true);
+                
+            } catch (error) {
+                console.error('Error in restart process:', error);
+            } finally {
+                // Reset button state
+                const button = document.querySelector('.reload-button');
+                button.disabled = false;
+                button.textContent = 'Reload Player';
+            }
+        }
+
         async function loadChannelInfo() {
             try {
                 const response = await fetch(`${API_BASE}/channels/${channelId}`);
                 channelInfo = await response.json();
+                channelName = channelInfo.name; // Save channel name for player URL
+                
                 document.querySelector('.channel-info').innerHTML = `
                     <h3>${channelInfo.name}</h3>
                     <p><strong>Input:</strong> ${channelInfo.input}</p>
                     <p><strong>Output:</strong> ${channelInfo.output}</p>
                     <p><strong>Status:</strong> ${channelInfo.status}</p>
                 `;
+                
+                // Initialize player after getting channel info
+                if (channelInfo.status === 'running') {
+                    initPlayer(true);
+                }
             } catch (error) {
                 console.error('Error loading channel info:', error);
                 document.querySelector('.channel-info').innerHTML = `
@@ -264,15 +559,38 @@
                 if (selectedClient) {
                     updateStatsDisplay(selectedClient);
                 }
+                
+                // If player not initialized and channel is running, initialize it
+                if (!playerInitialized && channelInfo?.status === 'running') {
+                    initPlayer(false);
+                }
             } catch (error) {
                 console.error('Error loading metrics:', error);
             }
         }
 
         async function initialize() {
+            console.log("Initializing RIST channel stats page");
+            
             await loadChannelInfo();
             await loadMetrics();
+            
+            // Set up periodic updates
             setInterval(loadMetrics, 1000);
+            
+            // Clean up on page unload
+            window.addEventListener('beforeunload', () => {
+                if (hlsInstance) {
+                    try {
+                        hlsInstance.destroy();
+                    } catch (e) {
+                        console.error("Error destroying HLS instance on unload:", e);
+                    }
+                    hlsInstance = null;
+                }
+            });
+            
+            console.log("Initialization complete");
         }
 
         initialize();
