@@ -9,6 +9,8 @@
     <title>RIST Transcoder Statistics</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <!-- Added HLS.js for video player -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.6.0-beta.1.0.canary.10759/hls.min.js"></script>
     <style>
         .chart-container {
             height: 240px;
@@ -45,8 +47,9 @@
             </div>
         </div>
 
-        <!-- Overview Card -->
+        <!-- New Grid Layout with Player -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Overview Card -->
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <h2 class="text-xl font-semibold mb-4">Transcoder Overview</h2>
                 <div class="grid grid-cols-2 gap-4 mb-4">
@@ -93,6 +96,21 @@
                 </div>
             </div>
 
+            <!-- Video Player Added -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Live Preview</h2>
+                    <button onclick="restartFFmpeg()" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded">
+                        Reload Player
+                    </button>
+                </div>
+                <div id="playerContainer" class="aspect-video bg-gray-100 rounded">
+                    <video id="video" controls class="w-full h-full"></video>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <!-- Bitrate Chart -->
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <h2 class="text-xl font-semibold mb-4">Bitrate</h2>
@@ -110,70 +128,72 @@
                     </div>
                 </div>
             </div>
+
+            <!-- A/V Sync, Performance, Buffering -->
+            <div class="grid grid-cols-1 gap-6">
+                <!-- A/V Sync -->
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-semibold mb-4">A/V Sync</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="p-4 bg-gray-50 rounded">
+                            <p class="text-sm text-gray-600">Current Drift</p>
+                            <p id="av_drift" class="text-2xl font-bold">-</p>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded">
+                            <p class="text-sm text-gray-600">Maximum Drift</p>
+                            <p id="av_max_drift" class="text-2xl font-bold">-</p>
+                        </div>
+                    </div>
+                </div>
+            
+                <!-- Performance Metrics -->
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-semibold mb-4">Performance</h2>
+                    <div class="p-4 bg-gray-50 rounded mb-2">
+                        <p class="text-sm text-gray-600">CPU Usage</p>
+                        <div class="flex items-center">
+                            <p id="cpu_usage" class="text-xl font-bold mr-2">-</p>
+                            <div class="w-full progress-bar">
+                                <div id="cpu_bar" class="progress-value bg-blue-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded mb-2">
+                        <p class="text-sm text-gray-600">Memory Usage</p>
+                        <div class="flex items-center">
+                            <p id="memory_usage" class="text-xl font-bold mr-2">-</p>
+                            <div class="w-full progress-bar">
+                                <div id="memory_bar" class="progress-value bg-green-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">Encoding</p>
+                        <p id="encoding_fps" class="text-xl font-bold">-</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- A/V Sync, Performance, Buffering -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <!-- A/V Sync -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-xl font-semibold mb-4">A/V Sync</h2>
-                <div class="p-4 bg-gray-50 rounded mb-4">
-                    <p class="text-sm text-gray-600">Current Drift</p>
-                    <p id="av_drift" class="text-2xl font-bold">-</p>
+        <!-- Buffer Configuration -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Buffer Configuration</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="p-4 bg-gray-50 rounded">
+                    <p class="text-sm text-gray-600">Buffer Mode</p>
+                    <p id="buffer_mode" class="text-xl font-bold">-</p>
                 </div>
                 <div class="p-4 bg-gray-50 rounded">
-                    <p class="text-sm text-gray-600">Maximum Drift</p>
-                    <p id="av_max_drift" class="text-2xl font-bold">-</p>
-                </div>
-            </div>
-            
-            <!-- Performance Metrics -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-xl font-semibold mb-4">Performance</h2>
-                <div class="p-4 bg-gray-50 rounded mb-2">
-                    <p class="text-sm text-gray-600">CPU Usage</p>
-                    <div class="flex items-center">
-                        <p id="cpu_usage" class="text-xl font-bold mr-2">-</p>
-                        <div class="w-full progress-bar">
-                            <div id="cpu_bar" class="progress-value bg-blue-500" style="width: 0%"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="p-4 bg-gray-50 rounded mb-2">
-                    <p class="text-sm text-gray-600">Memory Usage</p>
-                    <div class="flex items-center">
-                        <p id="memory_usage" class="text-xl font-bold mr-2">-</p>
-                        <div class="w-full progress-bar">
-                            <div id="memory_bar" class="progress-value bg-green-500" style="width: 0%"></div>
-                        </div>
-                    </div>
+                    <p class="text-sm text-gray-600">Leaky Mode</p>
+                    <p id="leaky_mode" class="text-xl font-bold">-</p>
                 </div>
                 <div class="p-4 bg-gray-50 rounded">
-                    <p class="text-sm text-gray-600">Encoding</p>
-                    <p id="encoding_fps" class="text-xl font-bold">-</p>
+                    <p class="text-sm text-gray-600">Buffer Size</p>
+                    <p id="buffer_size" class="text-xl font-bold">-</p>
                 </div>
-            </div>
-            
-            <!-- Buffer Configuration -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-xl font-semibold mb-4">Buffer Configuration</h2>
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="p-4 bg-gray-50 rounded">
-                        <p class="text-sm text-gray-600">Buffer Mode</p>
-                        <p id="buffer_mode" class="text-xl font-bold">-</p>
-                    </div>
-                    <div class="p-4 bg-gray-50 rounded">
-                        <p class="text-sm text-gray-600">Leaky Mode</p>
-                        <p id="leaky_mode" class="text-xl font-bold">-</p>
-                    </div>
-                    <div class="p-4 bg-gray-50 rounded">
-                        <p class="text-sm text-gray-600">Buffer Size</p>
-                        <p id="buffer_size" class="text-xl font-bold">-</p>
-                    </div>
-                    <div class="p-4 bg-gray-50 rounded">
-                        <p class="text-sm text-gray-600">Buffer Time</p>
-                        <p id="buffer_time" class="text-xl font-bold">-</p>
-                    </div>
+                <div class="p-4 bg-gray-50 rounded">
+                    <p class="text-sm text-gray-600">Buffer Time</p>
+                    <p id="buffer_time" class="text-xl font-bold">-</p>
                 </div>
             </div>
         </div>
@@ -303,7 +323,16 @@
             output: []
         };
         const timeLabels = [];
-
+        let transcoderName = '';
+        let transcoderStatus = 'stopped';
+        
+        // Track player state
+        let playerInitialized = false;
+        let hlsInstance = null;
+        let lastPlayerError = 0;
+        let lastPlayerInitTime = 0;
+        let playerInitAttempts = 0;
+        
         function formatBitrate(bps) {
             const value = typeof bps === 'number' ? bps : parseFloat(bps);
             
@@ -334,17 +363,38 @@
                 statusBadge.textContent = 'Running';
                 statusText.className = 'text-2xl font-bold p-1 rounded bg-green-100 text-green-800';
                 statusText.textContent = 'Running';
+                transcoderStatus = 'running';
             } else if (status === 'stopped') {
                 statusBadge.className = 'status-badge bg-gray-100 text-gray-800';
                 statusBadge.textContent = 'Stopped';
                 statusText.className = 'text-2xl font-bold p-1 rounded bg-gray-100 text-gray-800';
                 statusText.textContent = 'Stopped';
+                transcoderStatus = 'stopped';
             } else {
                 statusBadge.className = 'status-badge bg-red-100 text-red-800';
                 statusBadge.textContent = 'Error';
                 statusText.className = 'text-2xl font-bold p-1 rounded bg-red-100 text-red-800';
                 statusText.textContent = 'Error';
+                transcoderStatus = 'error';
             }
+            
+            // Update UI based on status
+            updateUIForTranscoderStatus();
+        }
+
+        function updateUIForTranscoderStatus() {
+            const restartButton = document.querySelector('[onclick="restartFFmpeg()"]');
+            
+            // Always keep restart button enabled for simplicity
+            if (restartButton) {
+                restartButton.disabled = false;
+                restartButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                restartButton.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                restartButton.textContent = 'Reload Player';
+            }
+            
+            // Do NOT reinitialize player on every status update
+            // That's what was causing the constant reloading
         }
 
         function formatMs(ms) {
@@ -369,180 +419,377 @@
             }
         }
 
-        function updateStats(metrics) {
-    // Update status
-    updateStatusDisplay(metrics.status);
-    
-    // Update uptime
-    document.getElementById('uptime').textContent = formatUptime(metrics.uptime);
-    
-    // Update bitrates
-    document.getElementById('input_bitrate').textContent = formatBitrate(metrics.input_bitrate_mbps * 1000);
-    document.getElementById('output_bitrate').textContent = formatBitrate(metrics.output_bitrate_mbps * 1000);
-    
-    // Update codec info - show both video and audio
-    if (metrics.input_info) {
-        const inputInfo = metrics.input_info;
-        document.getElementById('input_format').textContent = 
-            `Video: ${inputInfo.video_codec || 'Unknown'}\nAudio: ${inputInfo.audio_codec || 'Unknown'}`;
-    } else {
-        document.getElementById('input_format').textContent = 'Unknown';
-    }
-    
-    // Output format - show both video and audio codecs
-    document.getElementById('output_format').textContent = 
-        `Video: ${metrics.video_codec || 'Unknown'}\nAudio: ${metrics.audio_codec || 'Unknown'}`;
-    
-    // Update stream info
-    if (metrics.input_info) {
-        const inputInfo = metrics.input_info;
-        document.getElementById('video_pid').textContent = inputInfo.video_pid || '-';
-        document.getElementById('audio_pid').textContent = inputInfo.audio_pid || '-';
-    }
-    
-    // Update resolution and framerate from input_info
-    if (metrics.input_info) {
-        const inputInfo = metrics.input_info;
-        
-        if (inputInfo.resolution) {
-            document.getElementById('resolution').textContent = inputInfo.resolution;
-        } else {
-            document.getElementById('resolution').textContent = 'Unknown';
-        }
-        
-        if (inputInfo.framerate) {
-            document.getElementById('framerate').textContent = `${inputInfo.framerate.toFixed(2)} fps`;
-        } else {
-            document.getElementById('framerate').textContent = 'Unknown';
-        }
-    }
-    
-    // Update performance metrics - using 'processing' field instead of 'processing_metrics'
-    if (metrics.processing) {
-        const procMetrics = metrics.processing;
-        
-        // CPU usage - the API returns a cumulative value, so we'll use the root level value instead
-        const cpuUsage = metrics.cpu_usage || 0;
-        document.getElementById('cpu_usage').textContent = `${cpuUsage.toFixed(1)}%`;
-        updateProgressBar('cpu_bar', cpuUsage, 100);
-        
-        // Memory usage - use the root level value which is already in MB
-        const memoryUsage = metrics.memory_usage || 0;
-        document.getElementById('memory_usage').textContent = `${memoryUsage.toFixed(1)} MB`;
-        updateProgressBar('memory_bar', memoryUsage, 1000);
-        
-        // Encoding FPS
-        document.getElementById('encoding_fps').textContent = 
-            `${(procMetrics.video_encoding_fps || 0).toFixed(1)} fps`;
+        // Player initialization function - improved for better stability
+        function initPlayer(streamName, force = false) {
+            const now = Date.now();
             
-        // Update AV sync info - using direct fields from processing
-        document.getElementById('av_drift').textContent = formatMs(procMetrics.audio_video_drift_ms || 0);
-        document.getElementById('av_max_drift').textContent = formatMs(procMetrics.max_drift_ms || 0);
-        
-        // Update frame statistics
-        document.getElementById('frames_processed').textContent = 
-            (procMetrics.frames_processed || 0).toLocaleString();
-        document.getElementById('frames_dropped').textContent = 
-            (procMetrics.frames_dropped || 0).toLocaleString();
-        document.getElementById('frames_delayed').textContent = 
-            (procMetrics.frames_delayed || 0).toLocaleString();
-        
-        // PTS discontinuity
-        document.getElementById('pts_discontinuity').textContent = 
-            procMetrics.pts_discontinuity ? 'Yes' : 'No';
-        document.getElementById('timestamp_gap').textContent = 
-            formatMs(procMetrics.timestamp_gap_ns ? procMetrics.timestamp_gap_ns / 1000000 : 0);
-        
-        if (procMetrics.pts_discontinuity) {
-            document.getElementById('timestamp_status').className = 'p-2 rounded bg-yellow-100';
-        } else {
-            document.getElementById('timestamp_status').className = 'p-2 rounded bg-green-100';
+            // Prevent too frequent reinitializations
+            if (!force && playerInitialized && (now - lastPlayerInitTime < 10000)) {
+                console.log("Player recently initialized, skipping...");
+                return;
+            }
+            
+            // Track initialization time
+            lastPlayerInitTime = now;
+            playerInitAttempts++;
+            
+            console.log(`Initializing player (attempt ${playerInitAttempts}), force=${force}`);
+            
+            const playerContainer = document.getElementById('playerContainer');
+            
+            // Clean up existing HLS instance if it exists
+            if (hlsInstance) {
+                console.log("Destroying previous HLS instance");
+                try {
+                    hlsInstance.destroy();
+                } catch (e) {
+                    console.error("Error destroying HLS instance:", e);
+                }
+                hlsInstance = null;
+            }
+            
+            // Always create fresh video element
+            playerContainer.innerHTML = '<video id="video" controls class="w-full h-full"></video>';
+            const newVideo = document.getElementById('video');
+            
+            // Use the standard content path for transcoders
+            const url = `${window.location.protocol}//${window.location.hostname}/content/${transcoderName}/playlist.m3u8`;
+            
+            console.log(`Loading stream: ${url}`);
+            
+            if (Hls.isSupported()) {
+                hlsInstance = new Hls({
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 60,
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    // Add more robust error recovery
+                    fragLoadingMaxRetry: 6,
+                    manifestLoadingMaxRetry: 6,
+                    levelLoadingMaxRetry: 6,
+                    fragLoadingRetryDelay: 1000,
+                    manifestLoadingRetryDelay: 1000,
+                    levelLoadingRetryDelay: 1000
+                });
+                
+                hlsInstance.loadSource(url);
+                hlsInstance.attachMedia(newVideo);
+                
+                hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+                    console.log("Manifest parsed successfully, attempting autoplay");
+                    newVideo.play().catch(e => {
+                        console.warn('Autoplay prevented:', e);
+                    });
+                });
+                
+                hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+                    console.warn(`HLS error: type=${data.type}, details=${data.details}`, data);
+                    
+                    // Record error time to prevent too frequent recovery attempts
+                    lastPlayerError = Date.now();
+                    
+                    if (data.fatal) {
+                        console.error("Fatal HLS error:", data);
+                        
+                        // Handle different error types
+                        switch(data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.log('Network error - attempting to reload stream');
+                                hlsInstance.startLoad();
+                                break;
+                                
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.log('Media error - attempting recovery');
+                                hlsInstance.recoverMediaError();
+                                break;
+                                
+                            default:
+                                // For other fatal errors, we'll recreate the player
+                                // but not too frequently to prevent rapid reinitialization loops
+                                console.log('Fatal error - will recreate player after delay');
+                                
+                                // Ensure we don't have multiple attempts active
+                                if (hlsInstance) {
+                                    const instance = hlsInstance;
+                                    hlsInstance = null;
+                                    
+                                    // Safe destroy with delay
+                                    setTimeout(() => {
+                                        try {
+                                            instance.destroy();
+                                        } catch (e) {
+                                            console.error("Error destroying HLS instance:", e);
+                                        }
+                                        
+                                        // After a longer delay, try to initialize again
+                                        // Only if no other initialization has happened in between
+                                        setTimeout(() => {
+                                            if (Date.now() - lastPlayerInitTime >= 10000) {
+                                                console.log("Attempting player recovery after fatal error");
+                                                initPlayer(streamName, true);
+                                            }
+                                        }, 5000);
+                                    }, 500);
+                                }
+                                break;
+                        }
+                    }
+                });
+            } else if (newVideo.canPlayType('application/vnd.apple.mpegurl')) {
+                // For Safari
+                newVideo.src = url;
+                newVideo.addEventListener('loadedmetadata', () => {
+                    newVideo.play().catch(e => {
+                        console.warn('Autoplay prevented in Safari:', e);
+                    });
+                });
+            } else {
+                playerContainer.innerHTML = 
+                    '<div class="flex items-center justify-center h-full text-red-500">HLS playback not supported in this browser</div>';
+                return;
+            }
+            
+            playerInitialized = true;
+            console.log("Player initialization completed");
         }
-    }
-    
-    // Update packet statistics - using the packets object
-    if (metrics.packets) {
-        document.getElementById('input_packets').textContent = 
-            (metrics.packets.input || 0).toLocaleString();
-        document.getElementById('output_packets').textContent = 
-            (metrics.packets.output || 0).toLocaleString();
-    }
-    
-    // Update network metrics
-    if (metrics.network) {
-        document.getElementById('input_jitter').textContent = 
-            formatMs(metrics.network.input_jitter_ms || 0);
-        document.getElementById('output_jitter').textContent = 
-            formatMs(metrics.network.output_jitter_ms || 0);
-        
-        document.getElementById('network_stable').textContent = 
-            metrics.network.network_stable ? 'Stable' : 'Unstable';
-        document.getElementById('avg_packet_size').textContent = 
-            `${(metrics.network.avg_packet_size_bytes || 0).toFixed(0)} bytes`;
-        
-        if (metrics.network.network_stable) {
-            document.getElementById('network_status').className = 'p-2 rounded bg-green-100';
-        } else {
-            document.getElementById('network_status').className = 'p-2 rounded bg-red-100';
+
+        // FFmpeg restart function
+        async function restartFFmpeg() {
+            try {
+                // Get and update button state
+                const button = document.querySelector('[onclick="restartFFmpeg()"]');
+                button.disabled = true;
+                button.classList.add('bg-gray-400');
+                button.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                button.textContent = 'Restarting...';
+
+                console.log("User requested player restart");
+                
+                // First destroy existing player
+                if (hlsInstance) {
+                    console.log("Destroying HLS instance before restart");
+                    try {
+                        hlsInstance.destroy();
+                    } catch (e) {
+                        console.error("Error destroying HLS instance:", e);
+                    }
+                    hlsInstance = null;
+                }
+                
+                try {
+                    // Make the restart request to the server
+                    console.log(`Sending restart request to ${API_BASE}/transcoders/${transcoderId}/ffmpeg/restart`);
+                    const response = await fetch(`${API_BASE}/transcoders/${transcoderId}/ffmpeg/restart`, {
+                        method: 'PUT'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed to restart FFmpeg: ${response.status}`);
+                    }
+                    
+                    console.log("Server restart request successful, waiting before reloading player");
+                } catch (error) {
+                    console.error('Error restarting FFmpeg:', error);
+                }
+                
+                // Wait for restart to complete and reload player regardless of server response
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                console.log("Reinitializing player after restart wait");
+                
+                // Reset player state
+                playerInitialized = false;
+                playerInitAttempts = 0;
+                lastPlayerInitTime = 0;
+                
+                // Force a new player initialization
+                initPlayer(transcoderName, true);
+                
+            } catch (error) {
+                console.error('Error in restart process:', error);
+            } finally {
+                // Reset button state
+                const button = document.querySelector('[onclick="restartFFmpeg()"]');
+                button.disabled = false;
+                button.classList.remove('bg-gray-400');
+                button.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                button.textContent = 'Reload Player';
+            }
         }
-    }
-    
-    // Update queue levels from buffer_info
-    if (metrics.buffer_info) {
-        const bufferInfo = metrics.buffer_info;
-        
-        if (bufferInfo.video_queue) {
-            const vq = bufferInfo.video_queue;
-            document.getElementById('video_input_percent').textContent = `${vq.percent_full.toFixed(1)}%`;
-            updateProgressBar('video_input_bar', vq.percent_full);
+
+        function updateStats(metrics) {
+            // Update status
+            updateStatusDisplay(metrics.status);
+            
+            // Update uptime
+            document.getElementById('uptime').textContent = formatUptime(metrics.uptime);
+            
+            // Update bitrates
+            document.getElementById('input_bitrate').textContent = formatBitrate(metrics.input_bitrate_mbps * 1000);
+            document.getElementById('output_bitrate').textContent = formatBitrate(metrics.output_bitrate_mbps * 1000);
+            
+            // Update codec info - show both video and audio
+            if (metrics.input_info) {
+                const inputInfo = metrics.input_info;
+                document.getElementById('input_format').textContent = 
+                    `Video: ${inputInfo.video_codec || 'Unknown'}\nAudio: ${inputInfo.audio_codec || 'Unknown'}`;
+            } else {
+                document.getElementById('input_format').textContent = 'Unknown';
+            }
+            
+            // Output format - show both video and audio codecs
+            document.getElementById('output_format').textContent = 
+                `Video: ${metrics.video_codec || 'Unknown'}\nAudio: ${metrics.audio_codec || 'Unknown'}`;
+            
+            // Update stream info
+            if (metrics.input_info) {
+                const inputInfo = metrics.input_info;
+                document.getElementById('video_pid').textContent = inputInfo.video_pid || '-';
+                document.getElementById('audio_pid').textContent = inputInfo.audio_pid || '-';
+            }
+            
+            // Update resolution and framerate from input_info
+            if (metrics.input_info) {
+                const inputInfo = metrics.input_info;
+                
+                if (inputInfo.resolution) {
+                    document.getElementById('resolution').textContent = inputInfo.resolution;
+                } else {
+                    document.getElementById('resolution').textContent = 'Unknown';
+                }
+                
+                if (inputInfo.framerate) {
+                    document.getElementById('framerate').textContent = `${inputInfo.framerate.toFixed(2)} fps`;
+                } else {
+                    document.getElementById('framerate').textContent = 'Unknown';
+                }
+            }
+            
+            // Update performance metrics - using 'processing' field instead of 'processing_metrics'
+            if (metrics.processing) {
+                const procMetrics = metrics.processing;
+                
+                // CPU usage - the API returns a cumulative value, so we'll use the root level value instead
+                const cpuUsage = metrics.cpu_usage || 0;
+                document.getElementById('cpu_usage').textContent = `${cpuUsage.toFixed(1)}%`;
+                updateProgressBar('cpu_bar', cpuUsage, 100);
+                
+                // Memory usage - use the root level value which is already in MB
+                const memoryUsage = metrics.memory_usage || 0;
+                document.getElementById('memory_usage').textContent = `${memoryUsage.toFixed(1)} MB`;
+                updateProgressBar('memory_bar', memoryUsage, 1000);
+                
+                // Encoding FPS
+                document.getElementById('encoding_fps').textContent = 
+                    `${(procMetrics.video_encoding_fps || 0).toFixed(1)} fps`;
+                    
+                // Update AV sync info - using direct fields from processing
+                document.getElementById('av_drift').textContent = formatMs(procMetrics.audio_video_drift_ms || 0);
+                document.getElementById('av_max_drift').textContent = formatMs(procMetrics.max_drift_ms || 0);
+                
+                // Update frame statistics
+                document.getElementById('frames_processed').textContent = 
+                    (procMetrics.frames_processed || 0).toLocaleString();
+                document.getElementById('frames_dropped').textContent = 
+                    (procMetrics.frames_dropped || 0).toLocaleString();
+                document.getElementById('frames_delayed').textContent = 
+                    (procMetrics.frames_delayed || 0).toLocaleString();
+                
+                // PTS discontinuity
+                document.getElementById('pts_discontinuity').textContent = 
+                    procMetrics.pts_discontinuity ? 'Yes' : 'No';
+                document.getElementById('timestamp_gap').textContent = 
+                    formatMs(procMetrics.timestamp_gap_ns ? procMetrics.timestamp_gap_ns / 1000000 : 0);
+                
+                if (procMetrics.pts_discontinuity) {
+                    document.getElementById('timestamp_status').className = 'p-2 rounded bg-yellow-100';
+                } else {
+                    document.getElementById('timestamp_status').className = 'p-2 rounded bg-green-100';
+                }
+            }
+            
+            // Update packet statistics - using the packets object
+            if (metrics.packets) {
+                document.getElementById('input_packets').textContent = 
+                    (metrics.packets.input || 0).toLocaleString();
+                document.getElementById('output_packets').textContent = 
+                    (metrics.packets.output || 0).toLocaleString();
+            }
+            
+            // Update network metrics
+            if (metrics.network) {
+                document.getElementById('input_jitter').textContent = 
+                    formatMs(metrics.network.input_jitter_ms || 0);
+                document.getElementById('output_jitter').textContent = 
+                    formatMs(metrics.network.output_jitter_ms || 0);
+                
+                document.getElementById('network_stable').textContent = 
+                    metrics.network.network_stable ? 'Stable' : 'Unstable';
+                document.getElementById('avg_packet_size').textContent = 
+                    `${(metrics.network.avg_packet_size_bytes || 0).toFixed(0)} bytes`;
+                
+                if (metrics.network.network_stable) {
+                    document.getElementById('network_status').className = 'p-2 rounded bg-green-100';
+                } else {
+                    document.getElementById('network_status').className = 'p-2 rounded bg-red-100';
+                }
+            }
+            
+            // Update queue levels from buffer_info
+            if (metrics.buffer_info) {
+                const bufferInfo = metrics.buffer_info;
+                
+                if (bufferInfo.video_queue) {
+                    const vq = bufferInfo.video_queue;
+                    document.getElementById('video_input_percent').textContent = `${vq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('video_input_bar', vq.percent_full);
+                }
+                
+                if (bufferInfo.audio_queue) {
+                    const aq = bufferInfo.audio_queue;
+                    document.getElementById('audio_input_percent').textContent = `${aq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('audio_input_bar', aq.percent_full);
+                }
+                
+                if (bufferInfo.output_queue) {
+                    const voq = bufferInfo.output_queue;
+                    document.getElementById('video_output_percent').textContent = `${voq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('video_output_bar', voq.percent_full);
+                }
+                
+                if (bufferInfo.audio_out_queue) {
+                    const aoq = bufferInfo.audio_out_queue;
+                    document.getElementById('audio_output_percent').textContent = `${aoq.percent_full.toFixed(1)}%`;
+                    updateProgressBar('audio_output_bar', aoq.percent_full);
+                }
+            }
+            
+            // Fetch buffer stats to update underflow/overflow counters
+            fetchBufferStats();
+            
+            // Update chart data
+            const now = new Date().toLocaleTimeString();
+            timeLabels.push(now);
+            
+            // Get bitrate in Mbps for the chart
+            let inputMbps = metrics.input_bitrate_mbps || 0;
+            let outputMbps = metrics.output_bitrate_mbps || 0;
+            
+            bitrateData.input.push(inputMbps);
+            bitrateData.output.push(outputMbps);
+            
+            if (timeLabels.length > maxDataPoints) {
+                timeLabels.shift();
+                bitrateData.input.shift();
+                bitrateData.output.shift();
+            }
+            
+            if (bitrateChart) {
+                bitrateChart.data.labels = timeLabels;
+                bitrateChart.data.datasets[0].data = bitrateData.input;
+                bitrateChart.data.datasets[1].data = bitrateData.output;
+                bitrateChart.update();
+            }
         }
-        
-        if (bufferInfo.audio_queue) {
-            const aq = bufferInfo.audio_queue;
-            document.getElementById('audio_input_percent').textContent = `${aq.percent_full.toFixed(1)}%`;
-            updateProgressBar('audio_input_bar', aq.percent_full);
-        }
-        
-        if (bufferInfo.output_queue) {
-            const voq = bufferInfo.output_queue;
-            document.getElementById('video_output_percent').textContent = `${voq.percent_full.toFixed(1)}%`;
-            updateProgressBar('video_output_bar', voq.percent_full);
-        }
-        
-        if (bufferInfo.audio_out_queue) {
-            const aoq = bufferInfo.audio_out_queue;
-            document.getElementById('audio_output_percent').textContent = `${aoq.percent_full.toFixed(1)}%`;
-            updateProgressBar('audio_output_bar', aoq.percent_full);
-        }
-    }
-    
-    // Fetch buffer stats to update underflow/overflow counters
-    fetchBufferStats();
-    
-    // Update chart data
-    const now = new Date().toLocaleTimeString();
-    timeLabels.push(now);
-    
-    // Get bitrate in Mbps for the chart
-    let inputMbps = metrics.input_bitrate_mbps || 0;
-    let outputMbps = metrics.output_bitrate_mbps || 0;
-    
-    bitrateData.input.push(inputMbps);
-    bitrateData.output.push(outputMbps);
-    
-    if (timeLabels.length > maxDataPoints) {
-        timeLabels.shift();
-        bitrateData.input.shift();
-        bitrateData.output.shift();
-    }
-    
-    if (bitrateChart) {
-        bitrateChart.data.labels = timeLabels;
-        bitrateChart.data.datasets[0].data = bitrateData.input;
-        bitrateChart.data.datasets[1].data = bitrateData.output;
-        bitrateChart.update();
-    }
-}
 
         function fetchBufferStats() {
             fetch(`${API_BASE}/transcoders/${transcoderId}/buffers`, {
@@ -684,6 +931,8 @@
                 const response = await fetch(`${API_BASE}/transcoders/${transcoderId}`);
                 if (!response.ok) throw new Error('Failed to load transcoder info');
                 const transcoder = await response.json();
+                transcoderName = transcoder.name;
+                transcoderStatus = transcoder.status || 'stopped';
                 document.getElementById('transcoderTitle').textContent = `${transcoder.name} Statistics`;
                 
                 // Set initial values for buffer configuration
@@ -691,6 +940,9 @@
                     document.getElementById('buffer_size').textContent = `${transcoder.buffer_settings.buffer_size_mb || 1} MB`;
                     document.getElementById('buffer_time').textContent = `${transcoder.buffer_settings.buffer_time_ms || 1000} ms`;
                 }
+                
+                // Update UI based on transcoder status
+                updateUIForTranscoderStatus();
             } catch (error) {
                 console.error('Error loading transcoder info:', error);
             }
@@ -715,15 +967,24 @@
         }
 
         async function init() {
+            console.log("Initializing transcoder stats page");
             try {
                 await loadTranscoderInfo();
                 initCharts();
                 await updateMetrics();
                 
+                // Initialize player ONCE at startup, not on every status update
+                console.log("Initializing player first time");
+                initPlayer(transcoderName, true);
+                
                 // Poll for metrics every second
                 setInterval(updateMetrics, 1000);
+                
+                console.log("Initialization complete");
             } catch (error) {
                 console.error('Initialization error:', error);
+                // Still try to initialize player even if there was an error
+                initPlayer(transcoderName || 'output', true);
             }
         }
 
@@ -732,6 +993,19 @@
         } else {
             init();
         }
+        
+        // Add cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            // Clean up HLS instance if exists
+            if (hlsInstance) {
+                try {
+                    hlsInstance.destroy();
+                } catch (e) {
+                    console.error("Error destroying HLS instance on unload:", e);
+                }
+                hlsInstance = null;
+            }
+        });
     </script>
 </body>
 </html>
