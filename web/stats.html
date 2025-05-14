@@ -54,24 +54,6 @@ let channelStatus = 'stopped';
 
   let keepaliveInterval;
 
-async function startKeepalive() {
-    // Only proceed if the channel is actually running
-    if (channelStatus !== 'running') {
-        console.log('Channel is not running. Skipping keepalive.');
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/channels/${channelId}/keepalive`, {
-            method: 'POST'
-        });
-        if (!response.ok) {
-            throw new Error(`Keepalive failed: ${response.status}`);
-        }
-    } catch (error) {
-        console.error('Keepalive error:', error);
-    }
-}
 
   async function restartFFmpeg() {
 
@@ -258,7 +240,7 @@ if (stats.peers > 0 && !document.getElementById('video').src && !isInitializingP
    isInitializingPlayer = true;
    setTimeout(() => {
        initPlayer(channelName, true);
-   }, 10000);
+   }, 1000);
 } else if (!stats.peers > 0) {
    isInitializingPlayer = false;
    document.getElementById('playerContainer').innerHTML = 
@@ -429,11 +411,7 @@ function updateUIForChannelStatus() {
                 await updateMetrics();
 
                 
-                // Start keepalive only if channel is running
-        if (channelStatus === 'running') {
-            await startKeepalive();
-            keepaliveInterval = setInterval(startKeepalive, 30000);
-        }
+   
 
                 setInterval(updateMetrics, 1000);
 
