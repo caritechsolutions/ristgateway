@@ -422,6 +422,57 @@ WantedBy=multi-user.target
     
     return service_file
 
+def generate_transcoder_hls_service(transcoder_id: str, config):
+    """Generate systemd service file for HLS Server connected to a transcoder output"""
+    try:
+        # Get transcoder name and output address
+        transcoder_name = config.get("name", f"transcoder-{transcoder_id}")
+        output_address = config.get("output", {}).get("address", "")
+        
+        if not output_address:
+            return False, "No output address found in transcoder configuration"
+        
+        stream_path = f"/var/www/html/content/{transcoder_name}"
+        
+        # HLS Server Service
+        hls_service = f"""[Unit]
+Description=HLS Server for Transcoder {transcoder_name}
+After=transcoder-{transcoder_id}.service
+BindsTo=transcoder-{transcoder_id}.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/bash -c "mkdir -p {stream_path}"
+ExecStart=/root/ristgateway/hls_server --uri={output_address} --hls-path={stream_path} --watchdog-timeout=10
+ExecStopPost=/bin/bash -c "rm -f {stream_path}/*.ts {stream_path}/*.m3u8"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+        # Write HLS service file
+        hls_file = f"{SERVICE_DIR}/hls-transcoder-{transcoder_id}.service"
+        with open(hls_file, "w") as f:
+            f.write(hls_service)
+        
+        return True, ""
+    
+    except Exception as e:
+        error_msg = f"Failed to create HLS service file for transcoder: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
+
+def enable_service(service_name):
+    """Enable a systemd service"""
+    try:
+        subprocess.run(["systemctl", "enable", service_name], check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to enable service {service_name}: {e.stderr.decode()}")
+        return False
+
 def reload_systemd():
     """Reload systemd configuration"""
     try:
@@ -741,6 +792,10 @@ def create_transcoder(transcoder_id: str, transcoder: TranscoderChannel):
     # Generate service file
     try:
         generate_transcoder_service_file(transcoder_id, transcoder_dict)
+        
+        # Generate HLS service file
+        generate_transcoder_hls_service(transcoder_id, transcoder_dict)
+        
         reload_systemd()
     except Exception as e:
         logger.error(f"Error generating service file: {e}")
@@ -773,6 +828,10 @@ def update_transcoder(transcoder_id: str, transcoder: TranscoderChannel):
     # Re-generate service file
     try:
         generate_transcoder_service_file(transcoder_id, transcoder_dict)
+        
+        # Re-generate HLS service file
+        generate_transcoder_hls_service(transcoder_id, transcoder_dict)
+        
         reload_systemd()
         
         # Restart the service if it's running
@@ -784,6 +843,8 @@ def update_transcoder(transcoder_id: str, transcoder: TranscoderChannel):
         
         if current_status == "active":
             subprocess.run(["systemctl", "restart", f"transcoder-{transcoder_id}.service"], check=True)
+            # Also restart the HLS service
+            subprocess.run(["systemctl", "restart", f"hls-transcoder-{transcoder_id}.service"], check=True)
     except Exception as e:
         logger.error(f"Error updating service file: {e}")
     
@@ -801,14 +862,21 @@ def delete_transcoder(transcoder_id: str):
     # Stop the service if it's running
     try:
         subprocess.run(["systemctl", "stop", f"transcoder-{transcoder_id}.service"], check=False)
+        subprocess.run(["systemctl", "stop", f"hls-transcoder-{transcoder_id}.service"], check=False)
         subprocess.run(["systemctl", "disable", f"transcoder-{transcoder_id}.service"], check=False)
+        subprocess.run(["systemctl", "disable", f"hls-transcoder-{transcoder_id}.service"], check=False)
     except:
         pass
     
-    # Remove service file
+    # Remove service files
     service_file = f"{SERVICE_DIR}/transcoder-{transcoder_id}.service"
+    hls_file = f"{SERVICE_DIR}/hls-transcoder-{transcoder_id}.service"
+    
     if os.path.exists(service_file):
         os.remove(service_file)
+    
+    if os.path.exists(hls_file):
+        os.remove(hls_file)
     
     # Remove from config
     del config["transcoders"][transcoder_id]
@@ -823,22 +891,33 @@ def delete_transcoder(transcoder_id: str):
 
 @router.put("/{transcoder_id}/start")
 def start_transcoder(transcoder_id: str):
-    """Start a transcoder"""
+    """Start a transcoder and its associated HLS service"""
     config = load_config(TRANSCODER_CONFIG_FILE)
     
     # Check if transcoder exists
     if transcoder_id not in config.get("transcoders", {}):
         raise HTTPException(status_code=404, detail="Transcoder not found")
     
-    # Start the service
+    # Start the services
     try:
+        # Start transcoder first
         subprocess.run(["systemctl", "start", f"transcoder-{transcoder_id}.service"], check=True)
+        
+        # Wait a brief moment for the transcoder to initialize
+        time.sleep(1)
+        
+        # Explicitly start the HLS service 
+        try:
+            subprocess.run(["systemctl", "start", f"hls-transcoder-{transcoder_id}.service"], check=True)
+            logger.info(f"Started HLS service for transcoder {transcoder_id}")
+        except Exception as e:
+            logger.warning(f"Failed to start HLS service for transcoder {transcoder_id}: {e}")
         
         # Update status in config
         config["transcoders"][transcoder_id]["status"] = "running"
         save_config(config, TRANSCODER_CONFIG_FILE)
         
-        return {"status": "started", "transcoder_id": transcoder_id}
+        return {"status": "started", "transcoder_id": transcoder_id, "hls": "started"}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to start transcoder: {e.stderr.decode() if hasattr(e, 'stderr') else str(e)}")
 
