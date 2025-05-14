@@ -385,7 +385,7 @@ def reload_systemd():
         return False
 
 def generate_receiver_service_file(channel_id: str, channel: Dict):
-    """Generate systemd service files for RIST receiver and FFmpeg"""
+    """Generate systemd service files for RIST receiver and HLS Server"""
     try:
         # Parse RIST input URL
         input_url = channel["input"]
@@ -436,16 +436,16 @@ RestartSec=3
 WantedBy=multi-user.target
 """
 
-        # FFmpeg Service for preview (for receiver channels)
-        ffmpeg_service = f"""[Unit]
-Description=FFmpeg HLS for Receiver Channel {channel['name']}
+        # HLS Server Service (replacing FFmpeg)
+        hls_service = f"""[Unit]
+Description=HLS Server for Receiver Channel {channel['name']}
 After=rist-receiver-{channel_id}.service
 BindsTo=rist-receiver-{channel_id}.service
 
 [Service]
 Type=simple
-ExecStartPre=/bin/bash -c "mkdir -p {stream_path} && rm -f {stream_path}/*.ts {stream_path}/*.m3u8"
-ExecStart=ffmpeg -i {channel['output']} -c copy -hls_time 5 -hls_list_size 5 -hls_flags delete_segments {stream_path}/playlist.m3u8
+ExecStartPre=/bin/bash -c "mkdir -p {stream_path}"
+ExecStart=/root/ristgateway/hls_server --uri={channel['output']} --hls-path={stream_path} --watchdog-timeout=10
 ExecStopPost=/bin/bash -c "rm -f {stream_path}/*.ts {stream_path}/*.m3u8"
 Restart=always
 RestartSec=3
@@ -462,10 +462,10 @@ WantedBy=multi-user.target
         with open(rist_file, "w") as f:
             f.write(rist_service)
         
-        # Write FFmpeg service file
-        ffmpeg_file = f"{SERVICE_DIR}/ffmpeg-receiver-{channel_id}.service"
-        with open(ffmpeg_file, "w") as f:
-            f.write(ffmpeg_service)
+        # Write HLS service file
+        hls_file = f"{SERVICE_DIR}/hls-receiver-{channel_id}.service"
+        with open(hls_file, "w") as f:
+            f.write(hls_service)
         
         return True, ""
     
@@ -475,7 +475,7 @@ WantedBy=multi-user.target
         return False, error_msg
 
 def generate_sender_service_file(channel_id: str, channel: Dict):
-    """Generate systemd service files for RIST sender and FFmpeg"""
+    """Generate systemd service files for RIST sender and HLS Server"""
     try:
         # Parse RIST output URL
         output_url = channel["output"]
@@ -526,16 +526,16 @@ RestartSec=3
 WantedBy=multi-user.target
 """
 
-        # FFmpeg Service for preview (for sender channels)
-        ffmpeg_service = f"""[Unit]
-Description=FFmpeg HLS for Sender Channel {channel['name']}
+        # HLS Server Service (replacing FFmpeg)
+        hls_service = f"""[Unit]
+Description=HLS Server for Sender Channel {channel['name']}
 After=rist-sender-{channel_id}.service
 BindsTo=rist-sender-{channel_id}.service
 
 [Service]
 Type=simple
-ExecStartPre=/bin/bash -c "mkdir -p {stream_path} && rm -f {stream_path}/*.ts {stream_path}/*.m3u8"
-ExecStart=ffmpeg -i {channel['input']} -c copy -hls_time 5 -hls_list_size 5 -hls_flags delete_segments {stream_path}/playlist.m3u8
+ExecStartPre=/bin/bash -c "mkdir -p {stream_path}"
+ExecStart=/root/ristgateway/hls_server --uri={channel['input']} --hls-path={stream_path} --watchdog-timeout=10
 ExecStopPost=/bin/bash -c "rm -f {stream_path}/*.ts {stream_path}/*.m3u8"
 Restart=always
 RestartSec=3
@@ -552,15 +552,57 @@ WantedBy=multi-user.target
         with open(rist_file, "w") as f:
             f.write(rist_service)
         
-        # Write FFmpeg service file
-        ffmpeg_file = f"{SERVICE_DIR}/ffmpeg-sender-{channel_id}.service"
-        with open(ffmpeg_file, "w") as f:
-            f.write(ffmpeg_service)
+        # Write HLS service file
+        hls_file = f"{SERVICE_DIR}/hls-sender-{channel_id}.service"
+        with open(hls_file, "w") as f:
+            f.write(hls_service)
         
         return True, ""
     
     except Exception as e:
         error_msg = f"Failed to create service files: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        return False, error_msg
+
+def generate_transcoder_hls_service(transcoder_id: str, config):
+    """Generate systemd service file for HLS Server connected to a transcoder output"""
+    try:
+        # Get transcoder name and output address
+        transcoder_name = config.get("name", f"transcoder-{transcoder_id}")
+        output_address = config.get("output", {}).get("address", "")
+        
+        if not output_address:
+            return False, "No output address found in transcoder configuration"
+        
+        stream_path = f"/var/www/html/content/{transcoder_name}"
+        
+        # HLS Server Service
+        hls_service = f"""[Unit]
+Description=HLS Server for Transcoder {transcoder_name}
+After=transcoder-{transcoder_id}.service
+BindsTo=transcoder-{transcoder_id}.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/bash -c "mkdir -p {stream_path}"
+ExecStart=/root/ristgateway/hls_server --uri={output_address} --hls-path={stream_path} --watchdog-timeout=10
+ExecStopPost=/bin/bash -c "rm -f {stream_path}/*.ts {stream_path}/*.m3u8"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+        # Write HLS service file
+        hls_file = f"{SERVICE_DIR}/hls-transcoder-{transcoder_id}.service"
+        with open(hls_file, "w") as f:
+            f.write(hls_service)
+        
+        return True, ""
+    
+    except Exception as e:
+        error_msg = f"Failed to create HLS service file for transcoder: {str(e)}\n{traceback.format_exc()}"
         logger.error(error_msg)
         return False, error_msg
 
@@ -1037,6 +1079,7 @@ def generate_service_files(channel_id: str):
         # Enable service if channel is enabled
         if channel.get("enabled", True):
             enable_service(f"rist-receiver-{channel_id}.service")
+            enable_service(f"hls-receiver-{channel_id}.service")  # Add this line
         
         return {"status": "success", "message": "Receiver service files generated successfully"}
     
@@ -1051,6 +1094,8 @@ def generate_service_files(channel_id: str):
         # Enable service if channel is enabled
         if channel.get("enabled", True):
             enable_service(f"rist-sender-{channel_id}.service")
+            enable_service(f"hls-sender-{channel_id}.service")  # Add this line
+
         
         return {"status": "success", "message": "Sender service files generated successfully"}
     
@@ -1065,10 +1110,13 @@ def start_channel(channel_id: str):
     sender_config = load_config(SENDER_CONFIG_FILE)
     
     service_prefix = None
+    hls_prefix = None
     if channel_id in receiver_config.get("channels", {}):
         service_prefix = "rist-receiver"
+        hls_prefix = "hls-receiver"
     elif channel_id in sender_config.get("channels", {}):
         service_prefix = "rist-sender"
+        hls_prefix = "hls-sender"
     else:
         raise HTTPException(status_code=404, detail="Channel not found")
     
@@ -1077,8 +1125,11 @@ def start_channel(channel_id: str):
         if not os.path.exists(f"{SERVICE_DIR}/{service_prefix}-{channel_id}.service"):
             generate_service_files(channel_id)
         
-        # Start the RIST service (FFmpeg will start automatically due to the BindsTo directive)
+        # Start the RIST service 
         subprocess.run(["systemctl", "start", f"{service_prefix}-{channel_id}.service"], check=True)
+        
+        # Explicitly start the HLS service
+        subprocess.run(["systemctl", "start", f"{hls_prefix}-{channel_id}.service"], check=True)
         
         # Update channel status in config
         if service_prefix == "rist-receiver":
@@ -1101,15 +1152,18 @@ def stop_channel(channel_id: str):
     sender_config = load_config(SENDER_CONFIG_FILE)
     
     service_prefix = None
+    hls_prefix = None
     if channel_id in receiver_config.get("channels", {}):
         service_prefix = "rist-receiver"
+        hls_prefix = "hls-receiver"
     elif channel_id in sender_config.get("channels", {}):
         service_prefix = "rist-sender"
+        hls_prefix = "hls-sender"
     else:
         raise HTTPException(status_code=404, detail="Channel not found")
     
     try:
-        # Stop the RIST service (FFmpeg will stop automatically due to the BindsTo directive)
+        # Stop the RIST service (HLS will stop automatically due to the BindsTo directive)
         subprocess.run(["systemctl", "stop", f"{service_prefix}-{channel_id}.service"], check=True)
         
         # Update channel status in config
@@ -1127,16 +1181,16 @@ def stop_channel(channel_id: str):
 
 @app.put("/channels/{channel_id}/ffmpeg/restart")
 def restart_ffmpeg(channel_id: str):
-    """Restart FFmpeg service for a channel"""
+    """Restart HLS service for a channel"""
     # Check if it's a receiver or sender channel
     receiver_config = load_config(RECEIVER_CONFIG_FILE)
     sender_config = load_config(SENDER_CONFIG_FILE)
     
     service_prefix = None
     if channel_id in receiver_config.get("channels", {}):
-        service_prefix = "ffmpeg-receiver"
+        service_prefix = "hls-receiver"
     elif channel_id in sender_config.get("channels", {}):
-        service_prefix = "ffmpeg-sender"
+        service_prefix = "hls-sender"
     else:
         raise HTTPException(status_code=404, detail="Channel not found")
     
@@ -1145,7 +1199,8 @@ def restart_ffmpeg(channel_id: str):
         return {"status": "restarted"}
     
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to restart FFmpeg service: {e.stderr.decode() if hasattr(e, 'stderr') else str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to restart HLS service: {e.stderr.decode() if hasattr(e, 'stderr') else str(e)}")
+
 
 @app.delete("/channels/{channel_id}")
 def delete_channel(channel_id: str):
@@ -1158,6 +1213,8 @@ def delete_channel(channel_id: str):
         # Stop services first
         try:
             subprocess.run(["systemctl", "stop", f"rist-receiver-{channel_id}.service"], check=True)
+            # The HLS service should stop automatically due to BindsTo, but we'll make sure
+            subprocess.run(["systemctl", "stop", f"hls-receiver-{channel_id}.service"], check=False)
         except:
             pass
         
@@ -1180,6 +1237,8 @@ def delete_channel(channel_id: str):
             # Stop services first
             try:
                 subprocess.run(["systemctl", "stop", f"rist-sender-{channel_id}.service"], check=True)
+                # The HLS service should stop automatically due to BindsTo, but we'll make sure
+                subprocess.run(["systemctl", "stop", f"hls-sender-{channel_id}.service"], check=False)
             except:
                 pass
             
@@ -1196,27 +1255,27 @@ def delete_channel(channel_id: str):
     try:
         if channel_type == "receive":
             service_prefix = "rist-receiver"
-            ffmpeg_prefix = "ffmpeg-receiver"
+            hls_prefix = "hls-receiver"
         else:  # channel_type == "send"
             service_prefix = "rist-sender"
-            ffmpeg_prefix = "ffmpeg-sender"
+            hls_prefix = "hls-sender"
         
         # Disable services
         try:
             subprocess.run(["systemctl", "disable", f"{service_prefix}-{channel_id}.service"], check=True)
-            subprocess.run(["systemctl", "disable", f"{ffmpeg_prefix}-{channel_id}.service"], check=True)
+            subprocess.run(["systemctl", "disable", f"{hls_prefix}-{channel_id}.service"], check=True)
         except:
             pass
         
         # Remove service files
         service_file = f"{SERVICE_DIR}/{service_prefix}-{channel_id}.service"
-        ffmpeg_file = f"{SERVICE_DIR}/{ffmpeg_prefix}-{channel_id}.service"
+        hls_file = f"{SERVICE_DIR}/{hls_prefix}-{channel_id}.service"
         
         if os.path.exists(service_file):
             os.remove(service_file)
         
-        if os.path.exists(ffmpeg_file):
-            os.remove(ffmpeg_file)
+        if os.path.exists(hls_file):
+            os.remove(hls_file)
         
         # Reload systemd to recognize the changes
         reload_systemd()
