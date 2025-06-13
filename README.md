@@ -81,7 +81,7 @@ Check that all services are running:
 
 ```bash
 # Check main gateway service
-sudo systemctl status rist-gateway
+sudo systemctl status rist-gateway-api
 
 # Check failover service (if enabled)
 sudo systemctl status rist-failover
@@ -208,7 +208,7 @@ The gateway includes a powerful transcoding engine based on GStreamer.
 ### Service Won't Start
 ```bash
 # Check logs
-sudo journalctl -u rist-gateway -n 50
+sudo journalctl -u rist-gateway-api -n 50
 sudo tail -f /var/log/ristgateway/gateway.log
 ```
 
@@ -246,4 +246,33 @@ Log files are located in `/var/log/ristgateway/`:
 View logs:
 ```bash
 # API logs
-sudo tail -f /var/
+sudo tail -f /var/log/ristgateway/gateway.log
+
+# Channel logs
+sudo journalctl -u rist-channel-channel1 -f
+
+# Transcoder logs
+sudo journalctl -u transcoder-transcoder1 -f
+```
+
+## Security Considerations
+
+- The installation runs services as root (consider creating a dedicated user)
+- The API runs on port 5000 without authentication by default
+- Configure firewall rules to restrict access as needed
+- WireGuard VPN is recommended for remote access
+
+## Contributing
+
+Please submit issues and pull requests on GitHub:
+https://github.com/caritechsolutions/ristgateway
+
+## License
+
+[Specify your license here]
+
+## Support
+
+For support and questions:
+- Create an issue on GitHub
+- Contact: [Your contact information]
