@@ -88,8 +88,7 @@ clone_repo() {
     mkdir -p /root/ristgateway
     cd /root
     rm -rf ristgateway/*
-    # Replace with your actual repository URL
-    git clone https://github.com/yourusername/rist_gateway.git ristgateway
+    git clone https://github.com/caritechsolutions/ristgateway.git ristgateway
     chmod -R 755 /root/ristgateway
 }
 
