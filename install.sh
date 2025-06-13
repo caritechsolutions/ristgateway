@@ -117,11 +117,11 @@ stop_services() {
     fi
     
     # Stop main gateway service if it exists
-    if systemctl list-unit-files | grep -q "rist-gateway"; then
-        echo "Stopping rist-gateway service"
-        systemctl stop rist-gateway || echo "rist-gateway service was not running"
+    if systemctl list-unit-files | grep -q "rist-gateway-api"; then
+        echo "Stopping rist-gateway-api service"
+        systemctl stop rist-gateway-api || echo "rist-gateway-api service was not running"
     else
-        echo "No rist-gateway service found"
+        echo "No rist-gateway-api service found"
     fi
 
     # Stop failover service if it exists
@@ -247,52 +247,14 @@ setup_service() {
     mkdir -p /var/log/ristgateway
     chmod 755 /var/log/ristgateway
     
-    # Create main gateway service
-    cat > /etc/systemd/system/rist-gateway.service << 'EOF'
-[Unit]
-Description=RIST Gateway API Service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/root/ristgateway
-ExecStart=/usr/bin/python3 -m uvicorn gateway_api:app --host 0.0.0.0 --port 5000
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/ristgateway/gateway.log
-StandardError=append:/var/log/ristgateway/gateway-error.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Create failover service if it exists
-    if [ -f "/root/ristgateway/rist-failover.py" ]; then
-        cat > /etc/systemd/system/rist-failover.service << 'EOF'
-[Unit]
-Description=RIST Failover Service
-After=network.target rist-gateway.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/root/ristgateway
-ExecStart=/usr/bin/python3 /root/ristgateway/rist-failover.py
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/ristgateway/failover.log
-StandardError=append:/var/log/ristgateway/failover-error.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    fi
+    echo "Installing service files..."
+    cp /root/ristgateway/services/*.service /etc/systemd/system/
     
     echo "Reloading systemd..."
     systemctl daemon-reload
-    systemctl enable rist-gateway.service
+    systemctl enable rist-gateway-api.service
     
+    # Enable other services if they exist
     if [ -f "/etc/systemd/system/rist-failover.service" ]; then
         systemctl enable rist-failover.service
     fi
@@ -345,10 +307,10 @@ start_services() {
     systemctl restart nginx
     systemctl restart redis-server
     
-    echo "Starting rist-gateway service..."
-    systemctl start rist-gateway
+    echo "Starting rist-gateway-api service..."
+    systemctl start rist-gateway-api
     echo "Checking service status..."
-    systemctl status rist-gateway --no-pager
+    systemctl status rist-gateway-api --no-pager
     
     if [ -f "/etc/systemd/system/rist-failover.service" ]; then
         echo "Starting rist-failover service..."
@@ -372,7 +334,7 @@ main() {
     start_services
     
     echo "Installation completed successfully!"
-    echo "Please check service status with: systemctl status rist-gateway"
+    echo "Please check service status with: systemctl status rist-gateway-api"
     echo ""
     echo "Web interface should be available at: http://YOUR_SERVER_IP/"
     echo "API endpoint: http://YOUR_SERVER_IP:5000/"
