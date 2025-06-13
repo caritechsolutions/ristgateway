@@ -1846,12 +1846,25 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     demux = gst_element_factory_make("tsdemux", "ts-demuxer");
     video_queue = gst_element_factory_make("queue", "video-queue");
     if (vid_par_f) 
-        video_parser = gst_element_factory_make(vid_par_f, "video-parser");
-    video_decode = gst_element_factory_make(vid_dec_f, "video-decoder");
-    video_convert = gst_element_factory_make("videoconvert", "video-converter");
-    video_scale = gst_element_factory_make("videoscale", "video-scaler");
-    video_rate = gst_element_factory_make("videorate", "video-rate");
-    
+               
+              video_parser = gst_element_factory_make(vid_par_f, "video-parser");
+      
+        if (g_strcmp0(data->video_codec, "copy") == 0) {
+    		// Replace video processing elements with identity
+    		video_decode = gst_element_factory_make("identity", "video-decoder");
+    		video_convert = gst_element_factory_make("identity", "video-converter");
+    		video_scale = gst_element_factory_make("identity", "video-scaler");
+    		video_rate = gst_element_factory_make("identity", "video-rate");
+    		
+		}else{
+
+        
+        video_decode = gst_element_factory_make(vid_dec_f, "video-decoder");
+        video_convert = gst_element_factory_make("videoconvert", "video-converter");
+        video_scale = gst_element_factory_make("videoscale", "video-scaler");
+        video_rate = gst_element_factory_make("videorate", "video-rate");
+    }
+
     // Add optional clock overlay for debugging
     if (data->add_clock_overlay) {
         video_overlay = gst_element_factory_make("clockoverlay", "clock-overlay");
@@ -1860,9 +1873,18 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     audio_queue = gst_element_factory_make("queue", "audio-queue");
     if (aud_par_f) 
         audio_parser = gst_element_factory_make(aud_par_f, "audio-parser");
+
+if (g_strcmp0(data->audio_codec, "copy") == 0) {
+    // Replace audio processing elements with identity
+    audio_decode = gst_element_factory_make("identity", "audio-decoder");
+    audio_convert = gst_element_factory_make("identity", "audio-converter");
+    audio_resample = gst_element_factory_make("identity", "audio-resampler");
+    
+}else{
     audio_decode = gst_element_factory_make(aud_dec_f, "audio-decoder");
     audio_convert = gst_element_factory_make("audioconvert", "audio-converter");
     audio_resample = gst_element_factory_make("audioresample", "audio-resampler");
+}
     
     // Create muxer with improved latency settings
     mux = gst_element_factory_make("mpegtsmux", "ts-muxer");
@@ -1990,98 +2012,242 @@ static gboolean build_pipeline_manual(AppData *data, GError **error) {
     sinkpad = NULL;
 
     // Create video encoder
-    if (g_strcmp0(data->video_codec, "copy") == 0) {
-        video_encode = gst_element_factory_make("identity", "video-encoder");
-    } else if (g_strcmp0(data->video_codec, "h264") == 0) {
-        video_encode = gst_element_factory_make("x264enc", "video-encoder");
-        if (video_encode) {
-            // Configure for CBR live streaming
-            g_object_set(video_encode,
-                "bitrate", (guint)data->video_bitrate_kbps,
-                "pass", 0,           // String value "cbr" for constant bitrate
-                "tune", 0x00000004,      // zerolatency
-                "byte-stream", TRUE,     // Proper stream format
-                "vbv-buf-capacity", 50, // 8000ms buffer size
-                "rc-lookahead", 10,      // Small lookahead for rate stability
-                "mb-tree", FALSE,        // Disable mb-tree which can cause fluctuations
-                "threads", 4,            // Limit threads for more consistent encoding
-                NULL);
 
-            // Disable B-frames for live streaming (This block was already correct for no B-frames)
-            g_object_set(video_encode,
-                        "b-adapt", FALSE,
-                        "bframes", 0,
-                        NULL);
+if (g_strcmp0(data->video_codec, "copy") == 0) {
+    video_encode = gst_element_factory_make("identity", "video-encoder");
+} else if (g_strcmp0(data->video_codec, "h264") == 0) {
+    video_encode = gst_element_factory_make("x264enc", "video-encoder");
+    if (video_encode) {
+        // Configure for CBR live streaming
+        g_object_set(video_encode,
+            "bitrate", (guint)data->video_bitrate_kbps,
+            "pass", 0,           // String value "cbr" for constant bitrate
+            "tune", 0x00000004,      // zerolatency
+            "byte-stream", TRUE,     // Proper stream format
+            "vbv-buf-capacity", 50, // 8000ms buffer size
+            "rc-lookahead", 10,      // Small lookahead for rate stability
+            "mb-tree", FALSE,        // Disable mb-tree which can cause fluctuations
+            "threads", 4,            // Limit threads for more consistent encoding
+            NULL);
 
-            // Set encoding preset based on configuration
-            if (data->encoding_preset) {
-                g_info("Setting x264 preset to '%s' with CBR mode", data->encoding_preset);
+        // Disable B-frames for live streaming (This block was already correct for no B-frames)
+        g_object_set(video_encode,
+                    "b-adapt", FALSE,
+                    "bframes", 0,
+                    NULL);
 
-                // Map preset string to x264enc speed-preset value
-                gint speed_preset = 6;  // Default "medium"
-                if (g_strcmp0(data->encoding_preset, "ultrafast") == 0) speed_preset = 1;
-                else if (g_strcmp0(data->encoding_preset, "superfast") == 0) speed_preset = 2;
-                else if (g_strcmp0(data->encoding_preset, "veryfast") == 0) speed_preset = 3;
-                else if (g_strcmp0(data->encoding_preset, "faster") == 0) speed_preset = 4;
-                else if (g_strcmp0(data->encoding_preset, "fast") == 0) speed_preset = 5;
-                else if (g_strcmp0(data->encoding_preset, "medium") == 0) speed_preset = 6;
-                else if (g_strcmp0(data->encoding_preset, "slow") == 0) speed_preset = 7;
-                else if (g_strcmp0(data->encoding_preset, "slower") == 0) speed_preset = 8;
-                else if (g_strcmp0(data->encoding_preset, "veryslow") == 0) speed_preset = 9;
+        // Set encoding preset based on configuration
+        if (data->encoding_preset) {
+            g_info("Setting x264 preset to '%s' with CBR mode", data->encoding_preset);
 
-                g_object_set(video_encode, "speed-preset", speed_preset, NULL);
-            } else {
-                // For live, default to a faster preset if none specified
-                g_object_set(video_encode, "speed-preset", 7, NULL); // veryfast
-                g_info("No preset specified, defaulting to 'veryfast' for live CBR encoding");
-            }
+            // Map preset string to x264enc speed-preset value
+            gint speed_preset = 6;  // Default "medium"
+            if (g_strcmp0(data->encoding_preset, "ultrafast") == 0) speed_preset = 1;
+            else if (g_strcmp0(data->encoding_preset, "superfast") == 0) speed_preset = 2;
+            else if (g_strcmp0(data->encoding_preset, "veryfast") == 0) speed_preset = 3;
+            else if (g_strcmp0(data->encoding_preset, "faster") == 0) speed_preset = 4;
+            else if (g_strcmp0(data->encoding_preset, "fast") == 0) speed_preset = 5;
+            else if (g_strcmp0(data->encoding_preset, "medium") == 0) speed_preset = 6;
+            else if (g_strcmp0(data->encoding_preset, "slow") == 0) speed_preset = 7;
+            else if (g_strcmp0(data->encoding_preset, "slower") == 0) speed_preset = 8;
+            else if (g_strcmp0(data->encoding_preset, "veryslow") == 0) speed_preset = 9;
 
-            g_info("Configured x264enc for live CBR: bitrate=%d kbps, vbv-buf-capacity=%d kbit, vbv-max-bitrate=%d kbit",
-                  data->video_bitrate_kbps,
-                  data->video_bitrate_kbps, // Reflects the new vbv-buf-capacity setting
-                  data->video_bitrate_kbps  // Reflects the new vbv-max-bitrate setting
-                  );
+            g_object_set(video_encode, "speed-preset", speed_preset, NULL);
+        } else {
+            // For live, default to a faster preset if none specified
+            g_object_set(video_encode, "speed-preset", 7, NULL); // veryfast
+            g_info("No preset specified, defaulting to 'veryfast' for live CBR encoding");
+        }
 
-            // Add parser for the encoded output
-            video_out_parser = gst_element_factory_make("h264parse", "video-out-parser");
-            if (!video_out_parser) {
-                g_warning("Failed to create h264parse for output");
-            } else {
-                // Important for downstream elements to understand stream properties,
-                // especially for clients joining mid-stream. Sends SPS/PPS with I-frames.
-                g_object_set(video_out_parser, "config-interval", -1, NULL);
-            }
+        g_info("Configured x264enc for live CBR: bitrate=%d kbps, vbv-buf-capacity=%d kbit, vbv-max-bitrate=%d kbit",
+              data->video_bitrate_kbps,
+              data->video_bitrate_kbps, // Reflects the new vbv-buf-capacity setting
+              data->video_bitrate_kbps  // Reflects the new vbv-max-bitrate setting
+              );
 
-            // Add encoder quality probe
-            GstPad *enc_src_pad = gst_element_get_static_pad(video_encode, "src");
-            if (enc_src_pad) {
-                gst_pad_add_probe(enc_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
-                                encoder_quality_probe_cb, data, NULL);
-                gst_object_unref(enc_src_pad);
-            }
+        // Add parser for the encoded output
+        video_out_parser = gst_element_factory_make("h264parse", "video-out-parser");
+        if (!video_out_parser) {
+            g_warning("Failed to create h264parse for output");
+        } else {
+            // Important for downstream elements to understand stream properties,
+            // especially for clients joining mid-stream. Sends SPS/PPS with I-frames.
+            g_object_set(video_out_parser, "config-interval", -1, NULL);
+        }
+
+        // Add encoder quality probe
+        GstPad *enc_src_pad = gst_element_get_static_pad(video_encode, "src");
+        if (enc_src_pad) {
+            gst_pad_add_probe(enc_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
+                            encoder_quality_probe_cb, data, NULL);
+            gst_object_unref(enc_src_pad);
         }
     }
-    
-    if (!video_encode) {
-        g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to create video encoder");
-        goto build_fail_cleanup;
+} else if (g_strcmp0(data->video_codec, "h265") == 0 || g_strcmp0(data->video_codec, "hevc") == 0) {
+    video_encode = gst_element_factory_make("x265enc", "video-encoder");
+    if (video_encode) {
+        // Configure x265enc similar to x264enc
+        g_object_set(video_encode,
+            "bitrate", (guint)data->video_bitrate_kbps,
+            "tune", 0x00000004,      // zerolatency
+            "byte-stream", TRUE,     // Proper stream format
+            NULL);
+        
+        // Disable B-frames for live streaming
+        g_object_set(video_encode, "bframes", 0, NULL);
+            
+        // Apply preset if specified
+        if (data->encoding_preset) {
+            gint speed_preset = 6;  // Default "medium"
+            if (g_strcmp0(data->encoding_preset, "ultrafast") == 0) speed_preset = 1;
+            else if (g_strcmp0(data->encoding_preset, "superfast") == 0) speed_preset = 2;
+            else if (g_strcmp0(data->encoding_preset, "veryfast") == 0) speed_preset = 3;
+            else if (g_strcmp0(data->encoding_preset, "faster") == 0) speed_preset = 4;
+            else if (g_strcmp0(data->encoding_preset, "fast") == 0) speed_preset = 5;
+            else if (g_strcmp0(data->encoding_preset, "medium") == 0) speed_preset = 6;
+            else if (g_strcmp0(data->encoding_preset, "slow") == 0) speed_preset = 7;
+            else if (g_strcmp0(data->encoding_preset, "slower") == 0) speed_preset = 8;
+            else if (g_strcmp0(data->encoding_preset, "veryslow") == 0) speed_preset = 9;
+
+            g_object_set(video_encode, "speed-preset", speed_preset, NULL);
+        } else {
+            // For live, default to a faster preset if none specified
+            g_object_set(video_encode, "speed-preset", 3, NULL); // veryfast
+            g_info("No preset specified, defaulting to 'veryfast' for H.265 encoding");
+        }
+        
+        g_info("Configured x265enc: bitrate=%d kbps", data->video_bitrate_kbps);
+        
+        // Add h265parse for the encoded output
+        video_out_parser = gst_element_factory_make("h265parse", "video-out-parser");
+        if (!video_out_parser) {
+            g_warning("Failed to create h265parse for output");
+        } else {
+            // Config interval similar to h264parse
+            g_object_set(video_out_parser, "config-interval", -1, NULL);
+        }
+        
+        // Add encoder quality probe
+        GstPad *enc_src_pad = gst_element_get_static_pad(video_encode, "src");
+        if (enc_src_pad) {
+            gst_pad_add_probe(enc_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
+                            encoder_quality_probe_cb, data, NULL);
+            gst_object_unref(enc_src_pad);
+        }
     }
-    data->video_encoder = video_encode;
+} else if (g_strcmp0(data->video_codec, "mpeg2") == 0 || g_strcmp0(data->video_codec, "mpeg2video") == 0 || g_strcmp0(data->video_codec, "mp2") == 0) {
+    video_encode = gst_element_factory_make("avenc_mpeg2video", "video-encoder");
+    if (video_encode) {
+        // Configure mpeg2 encoder
+        g_object_set(video_encode,
+            "bitrate", data->video_bitrate_kbps * 1000, // Bitrate in bps
+            NULL);
+        
+        // Set keyframe interval if specified
+        if (data->keyframe_interval > 0) {
+            g_object_set(video_encode, "gop-size", data->keyframe_interval, NULL);
+        }
+        
+        g_info("Configured MPEG-2 video encoder: bitrate=%d kbps, keyframe=%d",
+               data->video_bitrate_kbps, data->keyframe_interval);
+            
+        // Add mpegvideoparse for the encoded output
+        video_out_parser = gst_element_factory_make("mpegvideoparse", "video-out-parser");
+        if (!video_out_parser) {
+            g_warning("Failed to create mpegvideoparse for output");
+        }
+        
+        // Add encoder quality probe
+        GstPad *enc_src_pad = gst_element_get_static_pad(video_encode, "src");
+        if (enc_src_pad) {
+            gst_pad_add_probe(enc_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
+                            encoder_quality_probe_cb, data, NULL);
+            gst_object_unref(enc_src_pad);
+        }
+    }
+} else if (g_strcmp0(data->video_codec, "av1") == 0) {
+    video_encode = gst_element_factory_make("svtav1enc", "video-encoder");
+    if (video_encode) {
+        // Configure AV1 encoder
+        g_object_set(video_encode,
+            "bitrate", data->video_bitrate_kbps * 1000, // Bitrate in bps
+            NULL);
+        
+        // Set preset based on the input preset
+        gint preset = 6; // Default to medium
+        if (g_strcmp0(data->encoding_preset, "ultrafast") == 0) preset = 0;
+        else if (g_strcmp0(data->encoding_preset, "superfast") == 0) preset = 1;
+        else if (g_strcmp0(data->encoding_preset, "veryfast") == 0) preset = 2;
+        else if (g_strcmp0(data->encoding_preset, "faster") == 0) preset = 3;
+        else if (g_strcmp0(data->encoding_preset, "fast") == 0) preset = 4;
+        else if (g_strcmp0(data->encoding_preset, "medium") == 0) preset = 6;
+        else if (g_strcmp0(data->encoding_preset, "slow") == 0) preset = 7;
+        else if (g_strcmp0(data->encoding_preset, "slower") == 0) preset = 8;
+        else if (g_strcmp0(data->encoding_preset, "veryslow") == 0) preset = 9;
+        
+        g_object_set(video_encode, 
+            "preset", preset,
+            NULL);
+        
+        // Set keyframe interval if specified
+        if (data->keyframe_interval > 0) {
+            g_object_set(video_encode, "keyframe-dist", data->keyframe_interval, NULL);
+        }
+        
+        g_info("Configured AV1 video encoder: bitrate=%d kbps, preset=%d, keyframe=%d",
+               data->video_bitrate_kbps, preset, data->keyframe_interval);
+        
+        // Add av1parse for the encoded output
+        video_out_parser = gst_element_factory_make("av1parse", "video-out-parser");
+        if (!video_out_parser) {
+            g_warning("Failed to create av1parse for output");
+        }
+        
+        // Add encoder quality probe
+        GstPad *enc_src_pad = gst_element_get_static_pad(video_encode, "src");
+        if (enc_src_pad) {
+            gst_pad_add_probe(enc_src_pad, GST_PAD_PROBE_TYPE_BUFFER,
+                            encoder_quality_probe_cb, data, NULL);
+            gst_object_unref(enc_src_pad);
+        }
+    }
+}
+
+if (!video_encode) {
+    g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to create video encoder");
+    goto build_fail_cleanup;
+}
+data->video_encoder = video_encode;
 
     // Create audio encoder
-    if (g_strcmp0(data->audio_codec, "copy") == 0) {
-        audio_encode = gst_element_factory_make("identity", "audio-encoder");
-    } else if (g_strcmp0(data->audio_codec, "aac") == 0) {
-        audio_encode = gst_element_factory_make("avenc_aac", "audio-encoder");
-        if (audio_encode) 
-            g_object_set(audio_encode, "bitrate", data->audio_bitrate_kbps * 1000, NULL);
-    }
-    
-    if (!audio_encode) {
-        g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to create audio encoder");
-        goto build_fail_cleanup;
-    }
-    data->audio_encoder = audio_encode;
+   
+if (g_strcmp0(data->audio_codec, "copy") == 0) {
+    audio_encode = gst_element_factory_make("identity", "audio-encoder");
+} else if (g_strcmp0(data->audio_codec, "aac") == 0) {
+    audio_encode = gst_element_factory_make("avenc_aac", "audio-encoder");
+    if (audio_encode) 
+        g_object_set(audio_encode, "bitrate", data->audio_bitrate_kbps * 1000, NULL);
+} else if (g_strcmp0(data->audio_codec, "mp2") == 0) {
+    audio_encode = gst_element_factory_make("avenc_mp2", "audio-encoder");
+    if (audio_encode) 
+        g_object_set(audio_encode, "bitrate", data->audio_bitrate_kbps * 1000, NULL);
+} else if (g_strcmp0(data->audio_codec, "ac3") == 0) {
+    audio_encode = gst_element_factory_make("avenc_ac3", "audio-encoder");
+    if (audio_encode) 
+        g_object_set(audio_encode, "bitrate", data->audio_bitrate_kbps * 1000, NULL);
+} else {
+    // Default fallback or error handling
+    g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, 
+                "Unsupported audio codec: %s", data->audio_codec);
+    goto build_fail_cleanup;
+}
+
+if (!audio_encode) {
+    g_set_error(error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED, "Failed to create audio encoder");
+    goto build_fail_cleanup;
+}
+data->audio_encoder = audio_encode;
+
 
     // Configure the new output queues - use regular queue not queue2
     guint64 buffer_size_bytes = data->buffer_size_mb * 1024 * 1024;
