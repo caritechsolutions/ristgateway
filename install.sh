@@ -5,6 +5,7 @@ set -e
 
 # Clean up any previous installation attempts
 rm -rf /root/ristgateway
+rm -rf /tmp/librist
 
 echo "Starting RIST Gateway installation..."
 
@@ -33,15 +34,40 @@ install_dependencies() {
     # Install git if not present
     apt-get install -y git
     
-    # Install system packages including GStreamer
+    # Install system packages including GStreamer and build tools for librist
     apt-get install -y python3 python3-pip python3-dev python3-psutil python3-yaml \
-    build-essential cmake pkg-config nginx redis-server ffmpeg \
+    build-essential cmake pkg-config meson ninja-build nginx redis-server ffmpeg \
+    libmicrohttpd-dev \
     gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
     gstreamer1.0-x gstreamer1.0-vaapi gstreamer1.0-nice gstreamer1.0-rtsp \
     libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
     libsoup2.4-dev libjson-glib-dev libglib2.0-dev \
     vainfo intel-media-va-driver i965-va-driver pciutils
+}
+
+# Build and install librist
+build_librist() {
+    echo "Building and installing librist..."
+    cd /tmp
+    
+    # Clean up any existing librist directory
+    if [ -d "librist" ]; then
+        echo "Removing existing librist directory..."
+        rm -rf librist
+    fi
+    
+    git clone https://code.videolan.org/rist/librist.git
+    cd librist
+    
+    # Configure and build with meson/ninja
+    meson setup build
+    cd build
+    ninja
+    ninja install
+    ldconfig
+    
+    cd /tmp
 }
 
 install_python_deps() {
@@ -324,6 +350,7 @@ start_services() {
 main() {
     check_root
     install_dependencies
+    build_librist
     install_python_deps
     clone_repo
     verify_config
@@ -334,6 +361,7 @@ main() {
     start_services
     
     echo "Installation completed successfully!"
+    echo "librist has been compiled and installed from source."
     echo "Please check service status with: systemctl status rist-gateway-api"
     echo ""
     echo "Web interface should be available at: http://YOUR_SERVER_IP/"
